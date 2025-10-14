@@ -1,0 +1,55 @@
+{
+  "name": "libcel-ts",
+  "version": "1.0.0",
+  "description": "TypeScript implementation of Google's Common Expression Language (CEL)",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "cel",
+    "common-expression-language",
+    "expression",
+    "evaluator",
+    "parser",
+    "interpreter",
+    "google",
+    "typescript"
+  ],
+  "author": "",
+  "license": "BSD-3-Clause",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11",
+    "vite-plugin-dts": "^3.7.1",
+    "vitest": "^1.2.0"
+  }
+}
