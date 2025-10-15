@@ -199,7 +199,7 @@ export function matches(text: string, pattern: string): boolean {
   try {
     const regex = new RegExp(pattern);
     return regex.test(text);
-  } catch (e) {
+  } catch {
     throw new Error(`Invalid regex pattern: ${pattern}`);
   }
 }

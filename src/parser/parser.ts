@@ -336,8 +336,8 @@ export class Parser {
 
     while (this.current.type === TokenType.COMMA) {
       this.advance();
-      const nextType = this.current.type;
-      if (nextType === TokenType.RPAREN || nextType === TokenType.RBRACKET) {
+      // @ts-expect-error - Token type changes after advance()
+      if (this.current.type === TokenType.RPAREN || this.current.type === TokenType.RBRACKET) {
         break;
       }
       expressions.push(this.parseExpr());
