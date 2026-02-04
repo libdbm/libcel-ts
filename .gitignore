@@ -37,3 +37,10 @@ pnpm-debug.log*
 # Temp
 *.tmp
 .cache/
+
+# Don't allow AI kibble
+.claude
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+
