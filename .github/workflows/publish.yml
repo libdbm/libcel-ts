@@ -1,4 +1,4 @@
-name: Publish to GitHub Packages
+name: Publish release
 
 on:
   release:
@@ -8,18 +8,27 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      packages: write
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://npm.pkg.github.com'
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run lint
       - run: npm test
       - run: npm run build
-      - run: npm publish
+      - run: npm pack
+      - name: Upload tarball to release
+        run: gh release upload "$GITHUB_REF_NAME" ./*.tgz
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish to npm (trusted publishing)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          case "$VERSION" in
+            *-*) npm publish --access public --provenance --tag next ;;
+            *)   npm publish --access public --provenance ;;
+          esac

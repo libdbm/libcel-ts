@@ -7,7 +7,7 @@
  *
  * @example Basic usage
  * ```typescript
- * import { CEL } from 'libcel-ts';
+ * import { CEL } from '@libdbm/libcel-ts';
  *
  * const cel = new CEL();
  *
@@ -56,3 +56,4 @@ export { StandardFunctions, EvaluationError } from './functions/index.js';
 // Utilities (optional, for advanced users)
 import * as Utilities from './functions/utilities.js';
 export { Utilities };
+export { asBool } from './functions/utilities.js';

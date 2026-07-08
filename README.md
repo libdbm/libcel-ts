@@ -19,11 +19,11 @@ CEL is a non-Turing complete expression language designed for simplicity, speed,
 ## Installation
 
 ```bash
-npm install libcel-ts
+npm install @libdbm/libcel-ts
 # or
-pnpm add libcel-ts
+pnpm add @libdbm/libcel-ts
 # or
-yarn add libcel-ts
+yarn add @libdbm/libcel-ts
 ```
 
 ## Quick Start
@@ -31,7 +31,7 @@ yarn add libcel-ts
 ### Basic Usage
 
 ```typescript
-import { CEL } from 'libcel-ts';
+import { CEL } from '@libdbm/libcel-ts';
 
 const cel = new CEL();
 
@@ -93,7 +93,7 @@ const activeNames = cel.eval('users.filter(u, u.active).map(u, u.name)', { users
 Extend the standard library with custom functions:
 
 ```typescript
-import { CEL, StandardFunctions } from 'libcel-ts';
+import { CEL, StandardFunctions } from '@libdbm/libcel-ts';
 
 class CustomFunctions extends StandardFunctions {
   callFunction(name: string, args: any[]): any {

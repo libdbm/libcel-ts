@@ -1,13 +1,10 @@
 {
   "name": "@libdbm/libcel-ts",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "TypeScript implementation of Google's Common Expression Language (CEL)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/libdbm/libcel-ts.git"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "url": "git+https://github.com/libdbm/libcel-ts.git"
   },
   "type": "module",
   "main": "./dist/index.cjs",
