@@ -26,4 +26,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Publish to npm (trusted publishing)
-        run: npm publish --access public --provenance
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          case "$VERSION" in
+            *-*) npm publish --access public --provenance --tag next ;;
+            *)   npm publish --access public --provenance ;;
+          esac
