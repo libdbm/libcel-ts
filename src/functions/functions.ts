@@ -1,12 +1,4 @@
-/**
- * Exception thrown during CEL expression evaluation.
- */
-export class EvaluationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'EvaluationError';
-  }
-}
+export { EvaluationError, ArgumentError } from '../errors.js';
 
 /**
  * Interface for providing functions to CEL expressions.

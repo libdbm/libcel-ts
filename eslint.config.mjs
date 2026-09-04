@@ -11,6 +11,10 @@ export default [
     },
     languageOptions: {
       parser: tsparser,
+      globals: {
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+      },
       parserOptions: {
         ecmaVersion: 2020,
         sourceType: 'module',

@@ -51,7 +51,10 @@ export { Interpreter } from './interpreter/index.js';
 
 // Functions
 export type { Functions } from './functions/index.js';
-export { StandardFunctions, EvaluationError } from './functions/index.js';
+export { StandardFunctions, EvaluationError, ArgumentError } from './functions/index.js';
+
+// Value model
+export * from './values/index.js';
 
 // Utilities (optional, for advanced users)
 import * as Utilities from './functions/utilities.js';

@@ -6,7 +6,7 @@
  */
 
 export type { Functions } from './functions.js';
-export { EvaluationError } from './functions.js';
+export { EvaluationError, ArgumentError } from './functions.js';
 export { StandardFunctions } from './standard-functions.js';
 import * as Utilities from './utilities.js';
 export { Utilities };
