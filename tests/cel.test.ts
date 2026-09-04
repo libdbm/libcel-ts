@@ -3,6 +3,7 @@ import { CEL } from '../src/cel.js';
 import { StandardFunctions } from '../src/functions/index.js';
 import { ParseError } from '../src/parser/index.js';
 import { Type } from '../src/values/type.js';
+import { EvaluationError } from '../src/errors.js';
 
 describe('CEL', () => {
   describe('Basic Usage', () => {
@@ -441,4 +442,132 @@ describe('CEL', () => {
       });
     });
   });
+  describe('Bytes Literals', () => {
+    it('should parse bytes literals with either prefix case', () => {
+      const cel = new CEL();
+      const hello = new TextEncoder().encode('hello');
+      const world = new TextEncoder().encode('world');
+      expect(cel.eval('b"hello"', {})).toEqual(hello);
+      expect(cel.eval('B"hello"', {})).toEqual(hello);
+      expect(cel.eval("b'world'", {})).toEqual(world);
+      expect(cel.eval("B'world'", {})).toEqual(world);
+    });
+  });
+
+  describe('Short-Circuit Evaluation', () => {
+    it('should not evaluate the right operand when the left decides', () => {
+      let count = 0;
+      const functions = new CustomFunctions({
+        check: (args) => {
+          count++;
+          return args[0];
+        },
+      });
+      const cel = new CEL(functions);
+
+      count = 0;
+      expect(cel.eval('false && check(true)', {})).toBe(false);
+      expect(count).toBe(0);
+
+      count = 0;
+      expect(cel.eval('true || check(false)', {})).toBe(true);
+      expect(count).toBe(0);
+    });
+
+    it('should convert types', () => {
+      const cel = new CEL();
+      expect(cel.eval('int(3.14)', {})).toBe(3n);
+      expect(cel.eval('double(42)', {})).toBe(42);
+      expect(cel.eval('string(true)', {})).toBe('true');
+      expect(cel.eval('bool(1)', {})).toBe(true);
+      expect(cel.eval('bool(0)', {})).toBe(false);
+    });
+  });
+
+  describe('Programs', () => {
+    it('should be compiled and reused', () => {
+      const program = new CEL().compile('x * 2 + y');
+      expect(program.evaluate({ x: 3, y: 4 })).toBe(10n);
+      expect(program.evaluate({ x: 5, y: 1 })).toBe(11n);
+      expect(program.evaluate({ x: 0, y: 7 })).toBe(7n);
+      expect(
+        program.evaluate(
+          new Map([
+            ['x', 1n],
+            ['y', 1n],
+          ])
+        )
+      ).toBe(3n);
+    });
+  });
+
+  describe('Static Calls With Custom Functions', () => {
+    it('should compile with a custom function', () => {
+      const custom = new CustomFunctions({
+        double: (args) => {
+          const value = args[0];
+          if (typeof value === 'bigint') {
+            return value * 2n;
+          }
+          if (typeof value === 'number') {
+            return value * 2;
+          }
+          throw new EvaluationError('double() expects numeric argument');
+        },
+      });
+      const program = CEL.compile('double(x) + y', custom);
+      expect(program.evaluate({ x: 10, y: 5 })).toBe(25n);
+      expect(program.evaluate({ x: 2, y: 5 })).toBe(9n);
+    });
+
+    it('should eval with a custom function', () => {
+      const custom = new CustomFunctions({ double: (args) => (args[0] as bigint) * 2n });
+      expect(CEL.eval('double(x)', custom, { x: 7 })).toBe(14n);
+    });
+
+    it('should throw for invalid expressions', () => {
+      const custom = new StandardFunctions();
+      expect(() => CEL.compile('x +', custom)).toThrow(ParseError);
+      expect(() => CEL.eval('(1 +', custom, {})).toThrow(ParseError);
+    });
+
+    it('should prefer custom functions over built-ins', () => {
+      // Override built-in size() to return a sentinel value
+      const custom = new CustomFunctions({ size: () => 999n, echo: (args) => args[0] });
+      expect(CEL.eval('size([1, 2, 3])', custom, {})).toBe(999n);
+      const program = CEL.compile('echo(a)', custom);
+      expect(program.evaluate({ a: 'hello' })).toBe('hello');
+    });
+
+    it('should normalise custom function results', () => {
+      const custom = new CustomFunctions({
+        record: () => ({ count: 2, when: new Date('2024-01-01T00:00:00Z') }),
+      });
+      expect(CEL.eval('record().count', custom, {})).toBe(2);
+      expect(CEL.eval('record().when.getFullYear()', custom, {})).toBe(2024n);
+    });
+  });
+
+  describe('Macro Errors', () => {
+    it('should reject malformed macro calls', () => {
+      const cel = new CEL();
+      expect(() => cel.eval('[1, 2, 3].map()', {})).toThrow(EvaluationError);
+      expect(() => cel.eval('[1, 2, 3].map(123, x * 2)', {})).toThrow(EvaluationError);
+    });
+  });
 });
+
+/** Custom functions implementation for testing. */
+class CustomFunctions extends StandardFunctions {
+  constructor(private readonly local: Record<string, (args: unknown[]) => unknown>) {
+    super();
+  }
+
+  override callFunction(name: string, args: unknown[]): unknown {
+    const custom = this.local[name];
+    if (custom) {
+      return custom(args);
+    }
+    return super.callFunction(name, args);
+  }
+}
