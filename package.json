@@ -30,7 +30,7 @@
     "test:coverage": "vitest --coverage",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "keywords": [
     "cel",
