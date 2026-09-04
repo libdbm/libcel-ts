@@ -56,7 +56,6 @@ export { StandardFunctions, EvaluationError, ArgumentError } from './functions/i
 // Value model
 export * from './values/index.js';
 
-// Utilities (optional, for advanced users)
-import * as Utilities from './functions/utilities.js';
-export { Utilities };
+// Utilities and extension libraries (optional, for advanced users)
+export { Utilities, Strings, Regexes, Lists, Sets, Maths, Codecs } from './functions/index.js';
 export { asBool } from './functions/utilities.js';

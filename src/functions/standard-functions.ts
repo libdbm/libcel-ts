@@ -1,11 +1,45 @@
 import { Functions, EvaluationError, ArgumentError } from './functions.js';
 import * as Utilities from './utilities.js';
+import * as Strings from './strings.js';
+import * as Regexes from './regexes.js';
+import * as Lists from './lists.js';
+import * as Sets from './sets.js';
+import * as Maths from './maths.js';
+import * as Codecs from './codecs.js';
 
 /**
  * Names of the namespaced functions this library provides, such as `math.abs`.
- * Populated by the extension libraries.
  */
-const QUALIFIED: ReadonlySet<string> = new Set<string>([]);
+const QUALIFIED: ReadonlySet<string> = new Set<string>([
+  'math.greatest',
+  'math.least',
+  'math.abs',
+  'math.ceil',
+  'math.floor',
+  'math.round',
+  'math.trunc',
+  'math.sign',
+  'math.sqrt',
+  'math.isNaN',
+  'math.isInf',
+  'math.isFinite',
+  'math.bitAnd',
+  'math.bitOr',
+  'math.bitXor',
+  'math.bitNot',
+  'math.bitShiftLeft',
+  'math.bitShiftRight',
+  'sets.contains',
+  'sets.equivalent',
+  'sets.intersects',
+  'base64.encode',
+  'base64.decode',
+  'lists.range',
+  'strings.quote',
+  'regex.replace',
+  'regex.extract',
+  'regex.extractAll',
+]);
 
 const MACROS = new Set(['map', 'filter', 'all', 'exists', 'existsOne', 'sortBy']);
 
@@ -61,6 +95,20 @@ export function list(value: unknown, name: string): unknown[] {
     return value;
   }
   throw new ArgumentError(`${name}() requires a list`);
+}
+
+function single(name: string, args: unknown[], operation: (value: unknown) => unknown): unknown {
+  require(name, args, 1, 1);
+  return operation(args[0]);
+}
+
+function pair(
+  name: string,
+  args: unknown[],
+  operation: (left: unknown, right: unknown) => unknown
+): unknown {
+  require(name, args, 2, 2);
+  return operation(args[0], args[1]);
 }
 
 /**
@@ -211,20 +259,104 @@ export class StandardFunctions implements Functions {
         }
         throw new ArgumentError('trim() requires string target');
 
-      case 'replace': {
-        require(method, args, 2, 2);
-        const value = text(target, method);
-        return value.replaceAll(text(args[0], method), text(args[1], method));
-      }
+      case 'replace':
+        require(method, args, 2, 3);
+        return Strings.replace(
+          text(target, method),
+          text(args[0], method),
+          text(args[1], method),
+          args.length > 2 ? Utilities.asInt(args[2]) : -1n
+        );
 
-      case 'split': {
+      case 'split':
+        require(method, args, 1, 2);
+        return Strings.split(
+          text(target, method),
+          text(args[0], method),
+          args.length > 1 ? Utilities.asInt(args[1]) : -1n
+        );
+
+      case 'charAt':
         require(method, args, 1, 1);
-        return text(target, method).split(text(args[0], method));
-      }
+        return Strings.charAt(text(target, method), Utilities.asInt(args[0]));
+
+      case 'indexOf':
+        require(method, args, 1, 2);
+        return Strings.indexOf(
+          text(target, method),
+          text(args[0], method),
+          args.length > 1 ? Utilities.asInt(args[1]) : 0n
+        );
+
+      case 'lastIndexOf':
+        require(method, args, 1, 2);
+        return Strings.lastIndexOf(
+          text(target, method),
+          text(args[0], method),
+          args.length > 1 ? Utilities.asInt(args[1]) : undefined
+        );
+
+      case 'lowerAscii':
+        require(method, args, 0, 0);
+        return Strings.lower(text(target, method));
+
+      case 'upperAscii':
+        require(method, args, 0, 0);
+        return Strings.upper(text(target, method));
+
+      case 'substring':
+        require(method, args, 1, 2);
+        return Strings.substring(
+          text(target, method),
+          Utilities.asInt(args[0]),
+          args.length > 1 ? Utilities.asInt(args[1]) : undefined
+        );
+
+      case 'join':
+        require(method, args, 0, 1);
+        return Strings.join(list(target, method), args.length > 0 ? text(args[0], method) : '');
+
+      case 'format':
+        require(method, args, 1, 1);
+        return Strings.format(text(target, method), list(args[0], method));
 
       case 'matches':
         require(method, args, 1, 1);
         return Utilities.matches(text(target, method), text(args[0], method));
+
+      case 'reverse':
+        require(method, args, 0, 0);
+        return Array.isArray(target)
+          ? Lists.reverse(target)
+          : Strings.reverse(text(target, method));
+
+      case 'distinct':
+        require(method, args, 0, 0);
+        return Lists.distinct(list(target, method));
+
+      case 'flatten':
+        require(method, args, 0, 1);
+        return Lists.flatten(list(target, method), args.length > 0 ? Utilities.asInt(args[0]) : 1n);
+
+      case 'slice':
+        require(method, args, 2, 2);
+        return Lists.slice(
+          list(target, method),
+          Utilities.asInt(args[0]),
+          Utilities.asInt(args[1])
+        );
+
+      case 'sort':
+        require(method, args, 0, 0);
+        return Lists.sort(list(target, method));
+
+      case 'first':
+        require(method, args, 0, 0);
+        return Lists.first(list(target, method));
+
+      case 'last':
+        require(method, args, 0, 0);
+        return Lists.last(list(target, method));
 
       case 'size':
         return Utilities.sizeOf(target);
@@ -249,8 +381,82 @@ export class StandardFunctions implements Functions {
    *
    * @throws ArgumentError if the name is unknown
    */
-  protected callQualified(name: string, _args: unknown[]): unknown {
-    throw new ArgumentError(`Unknown function: ${name}`);
+  protected callQualified(name: string, args: unknown[]): unknown {
+    switch (name) {
+      case 'math.greatest':
+        return Maths.greatest(args);
+      case 'math.least':
+        return Maths.least(args);
+      case 'math.abs':
+        return single(name, args, Maths.abs);
+      case 'math.ceil':
+        return single(name, args, Maths.ceil);
+      case 'math.floor':
+        return single(name, args, Maths.floor);
+      case 'math.round':
+        return single(name, args, Maths.round);
+      case 'math.trunc':
+        return single(name, args, Maths.trunc);
+      case 'math.sign':
+        return single(name, args, Maths.sign);
+      case 'math.sqrt':
+        return single(name, args, Maths.sqrt);
+      case 'math.isNaN':
+        return single(name, args, Maths.isNaN);
+      case 'math.isInf':
+        return single(name, args, Maths.isInf);
+      case 'math.isFinite':
+        return single(name, args, Maths.isFinite);
+      case 'math.bitAnd':
+        return pair(name, args, Maths.and);
+      case 'math.bitOr':
+        return pair(name, args, Maths.or);
+      case 'math.bitXor':
+        return pair(name, args, Maths.xor);
+      case 'math.bitNot':
+        return single(name, args, Maths.not);
+      case 'math.bitShiftLeft':
+        return pair(name, args, Maths.left);
+      case 'math.bitShiftRight':
+        return pair(name, args, Maths.right);
+      case 'sets.contains':
+        require(name, args, 2, 2);
+        return Sets.contains(list(args[0], name), list(args[1], name));
+      case 'sets.equivalent':
+        require(name, args, 2, 2);
+        return Sets.equivalent(list(args[0], name), list(args[1], name));
+      case 'sets.intersects':
+        require(name, args, 2, 2);
+        return Sets.intersects(list(args[0], name), list(args[1], name));
+      case 'base64.encode':
+        require(name, args, 1, 1);
+        return Codecs.encode(args[0]);
+      case 'base64.decode':
+        require(name, args, 1, 1);
+        return Codecs.decode(text(args[0], name));
+      case 'lists.range':
+        require(name, args, 1, 1);
+        return Lists.range(Utilities.asInt(args[0]));
+      case 'strings.quote':
+        require(name, args, 1, 1);
+        return Strings.quote(text(args[0], name));
+      case 'regex.replace':
+        require(name, args, 3, 4);
+        return Regexes.replace(
+          text(args[0], name),
+          text(args[1], name),
+          text(args[2], name),
+          args.length > 3 ? Utilities.asInt(args[3]) : -1n
+        );
+      case 'regex.extract':
+        require(name, args, 2, 2);
+        return Regexes.extract(text(args[0], name), text(args[1], name));
+      case 'regex.extractAll':
+        require(name, args, 2, 2);
+        return Regexes.extractAll(text(args[0], name), text(args[1], name));
+      default:
+        throw new ArgumentError(`Unknown function: ${name}`);
+    }
   }
 
   /**
