@@ -1,4 +1,4 @@
-import { CEL, StandardFunctions } from '../src/index.js';
+import { CEL, Parser, Printer, StandardFunctions } from '../src/index.js';
 
 /** Quick start examples demonstrating the libcel library. */
 
@@ -7,13 +7,16 @@ const cel = new CEL();
 console.log('=== Basic Expressions ===\n');
 
 // Arithmetic
-console.log(cel.eval('2 + 3 * 4', {})); // 14
-console.log(cel.eval('(2 + 3) * 4', {})); // 20
+// CEL ints are JavaScript bigints
+console.log(cel.eval('2 + 3 * 4', {})); // 14n
+console.log(cel.eval('(2 + 3) * 4', {})); // 20n
+console.log(cel.eval('7 / 2', {})); // 3n, integer division truncates
+console.log(cel.eval('7.0 / 2', {})); // 3.5
 
 // Variables
 const vars = { x: 10, y: 20 };
-console.log(cel.eval('x + y', vars)); // 30
-console.log(cel.eval('x * 2 + y', vars)); // 40
+console.log(cel.eval('x + y', vars)); // 30n
+console.log(cel.eval('x * 2 + y', vars)); // 40n
 
 console.log('\n=== Working with Strings ===\n');
 
@@ -28,14 +31,16 @@ console.log(cel.eval("'a,b,c'.split(',')", {})); // [ 'a', 'b', 'c' ]
 console.log('\n=== Working with Collections ===\n');
 
 // Lists
-console.log(cel.eval('[1, 2, 3] + [4, 5]', {})); // [ 1, 2, 3, 4, 5 ]
-console.log(cel.eval('[1, 2, 3][1]', {})); // 2
-console.log(cel.eval('size([1, 2, 3])', {})); // 3
+console.log(cel.eval('[1, 2, 3] + [4, 5]', {})); // [ 1n, 2n, 3n, 4n, 5n ]
+console.log(cel.eval('[1, 2, 3][1]', {})); // 2n
+console.log(cel.eval('size([1, 2, 3])', {})); // 3n
 
 // Maps
 const user = { name: 'Alice', age: 30 };
 console.log(cel.eval('user.name', { user })); // Alice
-console.log(cel.eval("user['age']", { user })); // 30
+console.log(cel.eval("user['age']", { user })); // 30n
+console.log(cel.eval('has(user.email)', { user })); // false, presence test
+console.log(cel.eval('{"a": 1}', {})); // Map(1) { 'a' => 1n }
 
 console.log('\n=== Boolean Logic ===\n');
 
@@ -53,10 +58,10 @@ console.log(cel.eval("age >= 18 ? 'adult' : 'minor'", { age: 25 })); // adult
 console.log('\n=== Macro Functions ===\n');
 
 // map - Transform elements
-console.log(cel.eval('[1, 2, 3].map(x, x * 2)', {})); // [ 2, 4, 6 ]
+console.log(cel.eval('[1, 2, 3].map(x, x * 2)', {})); // [ 2n, 4n, 6n ]
 
 // filter - Select elements
-console.log(cel.eval('[1, 2, 3, 4, 5].filter(x, x > 2)', {})); // [ 3, 4, 5 ]
+console.log(cel.eval('[1, 2, 3, 4, 5].filter(x, x > 2)', {})); // [ 3n, 4n, 5n ]
 
 // all - Check all elements
 console.log(cel.eval('[2, 4, 6].all(x, x % 2 == 0)', {})); // true
@@ -69,7 +74,11 @@ console.log(cel.eval('[1, 2, 3].existsOne(x, x == 2)', {})); // true
 
 // Chaining macros
 console.log(cel.eval('[1, 2, 3, 4, 5].filter(x, x > 2).map(x, x * 10)', {}));
-// [ 30, 40, 50 ]
+// [ 30n, 40n, 50n ]
+
+// sortBy and the three-argument map
+console.log(cel.eval('[3, 1, 2].sortBy(x, -x)', {})); // [ 3n, 2n, 1n ]
+console.log(cel.eval('[1, 2, 3, 4].map(x, x % 2 == 0, x * 2)', {})); // [ 4n, 8n ]
 
 console.log('\n=== Working with Complex Data ===\n');
 
@@ -101,22 +110,41 @@ console.log(program.evaluate({ price: 20, quantity: 3, discount: 0.2 }));
 
 console.log('\n=== Type Conversions ===\n');
 
-console.log(cel.eval("int('42')", {})); // 42
+console.log(cel.eval("int('42')", {})); // 42n
 console.log(cel.eval('double(42)', {})); // 42
 console.log(cel.eval('string(42)', {})); // 42
-console.log(cel.eval('type([1, 2, 3])', {})); // list
+console.log(cel.eval('type([1, 2, 3])', {})); // Type { name: 'list' }
+console.log(cel.eval('type(42) == int', {})); // true
+
+console.log('\n=== Extension Libraries ===\n');
+
+console.log(cel.eval("'%d apples at %.2f'.format([3, 1.5])", {})); // 3 apples at 1.50
+console.log(cel.eval("regex.replace('ab', '(\\\\w)', '[\\\\1]')", {})); // [a][b]
+console.log(cel.eval('math.greatest(1, 3, 2)', {})); // 3n
+console.log(cel.eval('[1, 2, 2, 3].distinct()', {})); // [ 1n, 2n, 3n ]
+console.log(cel.eval("base64.encode('hello')", {})); // aGVsbG8=
+console.log(cel.eval("timestamp('2024-03-05T14:30:45Z').getHours('America/New_York')", {})); // 9n
+console.log(cel.eval("string(duration('1h30m'))", {})); // 5400s
+
+console.log('\n=== Printing Expressions ===\n');
+
+console.log(Printer.print(new Parser('a + (b * c)').parse())); // a + b * c
+console.log(Printer.print(new Parser('(a + b) * c').parse())); // (a + b) * c
 
 console.log('\n=== Custom Functions ===\n');
 
 /** Example custom function library extending standard functions. */
 class CustomFunctions extends StandardFunctions {
-  callFunction(name: string, args: any[]): any {
+  override callFunction(name: string, args: unknown[]): unknown {
     switch (name) {
       case 'reverse':
-        return (args[0] as string).split('').reverse().join('');
-      case 'double':
+        return Array.from(args[0] as string)
+          .reverse()
+          .join('');
+      case 'twice': {
         const str = args[0] as string;
         return str + str;
+      }
       default:
         return super.callFunction(name, args);
     }
@@ -125,4 +153,4 @@ class CustomFunctions extends StandardFunctions {
 
 const customCel = new CEL(new CustomFunctions());
 console.log(customCel.eval("reverse('hello')", {})); // olleh
-console.log(customCel.eval("double('world')", {})); // worldworld
+console.log(customCel.eval("twice('world')", {})); // worldworld
