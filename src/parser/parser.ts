@@ -27,7 +27,12 @@ export { ParseError } from './lexer.js';
 /**
  * Set of macro method names that require special handling.
  */
-const MACRO_METHODS = new Set(['map', 'filter', 'all', 'exists', 'existsOne']);
+const MACRO_METHODS = new Set(['map', 'filter', 'all', 'exists', 'existsOne', 'sortBy']);
+
+/**
+ * Maximum nesting depth of an expression, guarding against stack exhaustion.
+ */
+const MAX_DEPTH = 256;
 
 /**
  * Recursive descent parser for CEL (Common Expression Language).
@@ -36,6 +41,7 @@ const MACRO_METHODS = new Set(['map', 'filter', 'all', 'exists', 'existsOne']);
 export class Parser {
   private readonly lexer: Lexer;
   private current: Token;
+  private depth = 0;
 
   constructor(input: string) {
     this.lexer = new Lexer(input);
@@ -61,16 +67,23 @@ export class Parser {
 
   // expr = conditionalOr ( '?' conditionalOr ':' expr )?
   private parseExpr(): Expression {
-    const condition = this.parseConditionalOr();
-
-    if (this.match(TokenType.QUESTION)) {
-      const thenExpr = this.parseConditionalOr();
-      this.expect(TokenType.COLON);
-      const otherwiseExpr = this.parseExpr();
-      return new Conditional(condition, thenExpr, otherwiseExpr);
+    if (++this.depth > MAX_DEPTH) {
+      throw new ParseError('Expression nesting too deep', this.current.line, this.current.column);
     }
+    try {
+      const condition = this.parseConditionalOr();
 
-    return condition;
+      if (this.match(TokenType.QUESTION)) {
+        const thenExpr = this.parseConditionalOr();
+        this.expect(TokenType.COLON);
+        const otherwiseExpr = this.parseExpr();
+        return new Conditional(condition, thenExpr, otherwiseExpr);
+      }
+
+      return condition;
+    } finally {
+      this.depth--;
+    }
   }
 
   // conditionalOr = conditionalAnd ( '||' conditionalAnd )*
@@ -245,9 +258,14 @@ export class Parser {
       // Function call
       // @ts-expect-error - Token type changes after advance()
       if (this.current.type === TokenType.LPAREN) {
+        const line = this.current.line;
+        const column = this.current.column;
         this.advance();
         const args = this.parseExprList();
         this.expect(TokenType.RPAREN);
+        if (name === 'has' && args.length === 1) {
+          return this.test(args[0]!, line, column);
+        }
         return new Call(null, name, args);
       }
 
@@ -272,6 +290,14 @@ export class Parser {
       this.current.line,
       this.current.column
     );
+  }
+
+  // Rewrites the has() macro into a presence test on the selected field
+  private test(expr: Expression, line: number, column: number): Expression {
+    if (expr instanceof Select) {
+      return new Select(expr.operand, expr.field, true);
+    }
+    throw new ParseError('has() requires a field selection, for example has(a.b)', line, column);
   }
 
   // listLiteral = '[' exprList? ','? ']'

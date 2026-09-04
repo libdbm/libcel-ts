@@ -525,4 +525,46 @@ describe('Parser', () => {
       }
     });
   });
+  describe('Presence Test Macro', () => {
+    it('should rewrite has(a.b) into a presence test', () => {
+      const expr = new Parser('has(a.b)').parse();
+      expect(expr).toBeInstanceOf(Select);
+      const select = expr as Select;
+      expect(select.isTest).toBe(true);
+      expect(select.field).toBe('b');
+      expect((select.operand as Identifier).name).toBe('a');
+    });
+
+    it('should keep the two-argument has() function', () => {
+      const expr = new Parser('has(m, "k")').parse();
+      expect(expr).toBeInstanceOf(Call);
+      expect((expr as Call).functionName).toBe('has');
+      expect((expr as Call).args.length).toBe(2);
+    });
+
+    it('should reject has() without a field selection', () => {
+      expect(() => new Parser('has(1)').parse()).toThrow(ParseError);
+      expect(() => new Parser('has(a)').parse()).toThrow(
+        'has() requires a field selection, for example has(a.b)'
+      );
+    });
+  });
+
+  describe('Nesting Depth', () => {
+    it('should reject expressions nested too deeply', () => {
+      const shallow = '('.repeat(200) + '1' + ')'.repeat(200);
+      expect(() => new Parser(shallow).parse()).not.toThrow();
+      const deep = '('.repeat(300) + '1' + ')'.repeat(300);
+      expect(() => new Parser(deep).parse()).toThrow('Expression nesting too deep');
+    });
+  });
+
+  describe('Macro Recognition', () => {
+    it('should recognise sortBy as a macro', () => {
+      const expr = new Parser('items.sortBy(x, x.age)').parse();
+      expect(expr).toBeInstanceOf(Call);
+      expect((expr as Call).isMacro).toBe(true);
+      expect((expr as Call).functionName).toBe('sortBy');
+    });
+  });
 });

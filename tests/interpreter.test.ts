@@ -212,4 +212,44 @@ describe('Interpreter', () => {
       expect(interp.evaluate(new Parser('text.endsWith("lo")').parse())).toBe(true);
     });
   });
+  describe('Presence Tests', () => {
+    it('should test field presence with has(a.b)', () => {
+      const vars = { a: { b: 1 } };
+      expect(evalExpr('has(a.b)', vars)).toBe(true);
+      expect(evalExpr('has(a.c)', vars)).toBe(false);
+      expect(evalExpr('has(a.b) && a.b == 1', vars)).toBe(true);
+    });
+  });
+
+  describe('Extended Macros', () => {
+    it('should filter and transform with the three-argument map', () => {
+      expect(evalExpr('[1, 2, 3, 4].map(x, x % 2 == 0, x * 2)')).toEqual([4n, 8n]);
+    });
+
+    it('should sort with sortBy', () => {
+      expect(evalExpr('[3, 1, 2].sortBy(x, x)')).toEqual([1n, 2n, 3n]);
+      expect(evalExpr('[3, 1, 2].sortBy(x, -x)')).toEqual([3n, 2n, 1n]);
+      const users = [
+        { name: 'Bob', age: 35 },
+        { name: 'Alice', age: 25 },
+        { name: 'Charlie', age: 30 },
+      ];
+      expect(evalExpr('users.sortBy(u, u.age).map(u, u.name)', { users })).toEqual([
+        'Alice',
+        'Charlie',
+        'Bob',
+      ]);
+    });
+
+    it('should iterate the keys of a map target', () => {
+      const scores = { a: 1, b: 2 };
+      expect(evalExpr('scores.map(k, k)', { scores })).toEqual(['a', 'b']);
+      expect(evalExpr('scores.exists(k, k == "a")', { scores })).toBe(true);
+      expect(evalExpr('scores.filter(k, k == "b")', { scores })).toEqual(['b']);
+    });
+
+    it('should require boolean predicates', () => {
+      expect(() => evalExpr('[1, 2].filter(x, x)')).toThrow('requires a boolean predicate');
+    });
+  });
 });
