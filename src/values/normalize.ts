@@ -22,7 +22,18 @@ import { Type } from './type.js';
  * @throws ArgumentError if the value contains a cycle
  */
 export function normalize(value: unknown): unknown {
-  return convert(value, new Set());
+  return convert(value, new Set(), true);
+}
+
+/**
+ * Converts a value returned by a function into the CEL value model.
+ *
+ * Like {@link normalize}, except that numbers are left as doubles: a function
+ * returning a JavaScript number has produced a CEL double, and one that wants to
+ * return an int returns a `bigint`.
+ */
+export function normalizeResult(value: unknown): unknown {
+  return convert(value, new Set(), false);
 }
 
 /** Reports whether the value is a plain object (not a class instance). */
@@ -34,12 +45,12 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return proto === Object.prototype || proto === null;
 }
 
-function convert(value: unknown, ancestors: Set<object>): unknown {
+function convert(value: unknown, ancestors: Set<object>, integers: boolean): unknown {
   switch (typeof value) {
     case 'undefined':
       return null;
     case 'number':
-      return Number.isInteger(value) ? BigInt(value) : value;
+      return integers && Number.isInteger(value) ? BigInt(value) : value;
     case 'bigint':
     case 'string':
     case 'boolean':
@@ -64,13 +75,13 @@ function convert(value: unknown, ancestors: Set<object>): unknown {
     return Timestamp.fromDate(value);
   }
   if (Array.isArray(value)) {
-    return descend(value, ancestors, () => value.map((item) => convert(item, ancestors)));
+    return descend(value, ancestors, () => value.map((item) => convert(item, ancestors, integers)));
   }
   if (value instanceof Map) {
     return descend(value, ancestors, () => {
       const result = new Map<unknown, unknown>();
       for (const [k, v] of value) {
-        result.set(convert(k, ancestors), convert(v, ancestors));
+        result.set(convert(k, ancestors, integers), convert(v, ancestors, integers));
       }
       return result;
     });
@@ -79,7 +90,7 @@ function convert(value: unknown, ancestors: Set<object>): unknown {
     return descend(value, ancestors, () => {
       const result = new Map<string, unknown>();
       for (const [k, v] of Object.entries(value)) {
-        result.set(k, convert(v, ancestors));
+        result.set(k, convert(v, ancestors, integers));
       }
       return result;
     });

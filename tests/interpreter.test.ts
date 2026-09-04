@@ -13,7 +13,7 @@ function evalExpr(expr: string, vars: Record<string, any> = {}): any {
 describe('Interpreter', () => {
   describe('Literals', () => {
     it('should evaluate literals', () => {
-      expect(evalExpr('42')).toBe(42);
+      expect(evalExpr('42')).toBe(42n);
       expect(evalExpr('3.14')).toBe(3.14);
       expect(evalExpr('"hello"')).toBe('hello');
       expect(evalExpr('true')).toBe(true);
@@ -24,11 +24,12 @@ describe('Interpreter', () => {
 
   describe('Arithmetic', () => {
     it('should evaluate arithmetic operations', () => {
-      expect(evalExpr('3 + 4')).toBe(7);
-      expect(evalExpr('3 * 4')).toBe(12);
-      expect(evalExpr('5 - 4')).toBe(1);
-      expect(evalExpr('5 / 2')).toBe(2.5);
-      expect(evalExpr('5 % 2')).toBe(1);
+      expect(evalExpr('3 + 4')).toBe(7n);
+      expect(evalExpr('3 * 4')).toBe(12n);
+      expect(evalExpr('5 - 4')).toBe(1n);
+      expect(evalExpr('5 / 2')).toBe(2n);
+      expect(evalExpr('5.0 / 2')).toBe(2.5);
+      expect(evalExpr('5 % 2')).toBe(1n);
     });
   });
 
@@ -42,10 +43,10 @@ describe('Interpreter', () => {
   describe('List Operations', () => {
     it('should handle list operations', () => {
       const result = evalExpr('[1, 2] + [3, 4]');
-      expect(result).toEqual([1, 2, 3, 4]);
+      expect(result).toEqual([1n, 2n, 3n, 4n]);
 
       const repeated = evalExpr('[1, 2] * 3');
-      expect(repeated).toEqual([1, 2, 1, 2, 1, 2]);
+      expect(repeated).toEqual([1n, 2n, 1n, 2n, 1n, 2n]);
     });
   });
 
@@ -85,7 +86,7 @@ describe('Interpreter', () => {
       const interp = new Interpreter(vars);
 
       expect(interp.evaluate(new Parser('name').parse())).toBe('Alice');
-      expect(interp.evaluate(new Parser('age').parse())).toBe(30);
+      expect(interp.evaluate(new Parser('age').parse())).toBe(30n);
     });
   });
 
@@ -96,7 +97,7 @@ describe('Interpreter', () => {
       const interp = new Interpreter(vars);
 
       expect(interp.evaluate(new Parser('person.name').parse())).toBe('Bob');
-      expect(interp.evaluate(new Parser('person.age').parse())).toBe(25);
+      expect(interp.evaluate(new Parser('person.age').parse())).toBe(25n);
       expect(interp.evaluate(new Parser('person["name"]').parse())).toBe('Bob');
     });
   });
@@ -106,16 +107,16 @@ describe('Interpreter', () => {
       const vars = { items: [10, 20, 30] };
       const interp = new Interpreter(vars);
 
-      expect(interp.evaluate(new Parser('items[0]').parse())).toBe(10);
-      expect(interp.evaluate(new Parser('items[1]').parse())).toBe(20);
-      expect(interp.evaluate(new Parser('items[2]').parse())).toBe(30);
+      expect(interp.evaluate(new Parser('items[0]').parse())).toBe(10n);
+      expect(interp.evaluate(new Parser('items[1]').parse())).toBe(20n);
+      expect(interp.evaluate(new Parser('items[2]').parse())).toBe(30n);
     });
   });
 
   describe('Ternary Operator', () => {
     it('should evaluate ternary expressions', () => {
-      expect(evalExpr('true ? 10 : 20')).toBe(10);
-      expect(evalExpr('false ? 10 : 20')).toBe(20);
+      expect(evalExpr('true ? 10 : 20')).toBe(10n);
+      expect(evalExpr('false ? 10 : 20')).toBe(20n);
     });
   });
 
@@ -133,14 +134,14 @@ describe('Interpreter', () => {
       const vars = { nums: [1, 2, 3] };
       const interp = new Interpreter(vars);
       const result = interp.evaluate(new Parser('nums.map(x, x * 2)').parse());
-      expect(result).toEqual([2, 4, 6]);
+      expect(result).toEqual([2n, 4n, 6n]);
     });
 
     it('should evaluate filter macro', () => {
       const vars = { nums: [1, 2, 3, 4, 5] };
       const interp = new Interpreter(vars);
       const result = interp.evaluate(new Parser('nums.filter(x, x > 3)').parse());
-      expect(result).toEqual([4, 5]);
+      expect(result).toEqual([4n, 5n]);
     });
 
     it('should evaluate all macro', () => {
@@ -175,7 +176,7 @@ describe('Interpreter', () => {
       interp.evaluate(new Parser('nums.map(x, x * 2)').parse());
 
       // x should be restored to original value
-      expect(interp.evaluate(new Parser('x').parse())).toBe(100);
+      expect(interp.evaluate(new Parser('x').parse())).toBe(100n);
     });
   });
 
@@ -204,8 +205,8 @@ describe('Interpreter', () => {
       };
       const interp = new Interpreter(vars);
 
-      expect(interp.evaluate(new Parser('size(text)').parse())).toBe(5);
-      expect(interp.evaluate(new Parser('size(items)').parse())).toBe(3);
+      expect(interp.evaluate(new Parser('size(text)').parse())).toBe(5n);
+      expect(interp.evaluate(new Parser('size(items)').parse())).toBe(3n);
       expect(interp.evaluate(new Parser('text.contains("ell")').parse())).toBe(true);
       expect(interp.evaluate(new Parser('text.startsWith("hel")').parse())).toBe(true);
       expect(interp.evaluate(new Parser('text.endsWith("lo")').parse())).toBe(true);

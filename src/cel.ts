@@ -74,7 +74,11 @@ export class CEL {
    * const result = CEL.eval('x * 2', new StandardFunctions(), { x: 5 });
    * ```
    */
-  static eval(expression: string, functions: Functions, variables: Record<string, any>): any {
+  static eval(
+    expression: string,
+    functions: Functions,
+    variables: Record<string, unknown> | Map<string, unknown>
+  ): unknown {
     const program = this.compile(expression, functions);
     return program.evaluate(variables);
   }
@@ -121,7 +125,10 @@ export class CEL {
    * });
    * ```
    */
-  eval(expression: string, variables: Record<string, any> = {}): any {
+  eval(
+    expression: string,
+    variables: Record<string, unknown> | Map<string, unknown> = {}
+  ): unknown {
     return CEL.eval(expression, this.functions, variables);
   }
 }

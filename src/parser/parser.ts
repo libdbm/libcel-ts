@@ -18,6 +18,8 @@ import {
   LiteralType,
 } from '../ast/index.js';
 import { Lexer, Token, TokenType, ParseError } from './lexer.js';
+import { utf8Encode } from '../values/bytes.js';
+import { INT64_MIN, INT64_MAX } from '../values/numbers.js';
 
 // Re-export ParseError for convenience
 export { ParseError } from './lexer.js';
@@ -140,8 +142,8 @@ export class Parser {
         op === TokenType.STAR
           ? BinaryOp.MULTIPLY
           : op === TokenType.SLASH
-          ? BinaryOp.DIVIDE
-          : BinaryOp.MODULO;
+            ? BinaryOp.DIVIDE
+            : BinaryOp.MODULO;
       left = new Binary(operator, left, right);
     }
 
@@ -421,11 +423,11 @@ export class Parser {
       case TokenType.FALSE:
         return new Literal(false, LiteralType.BOOL);
       case TokenType.INT:
-        return new Literal(this.parseIntLiteral(token.value), LiteralType.INT);
+        return new Literal(this.parseIntLiteral(token), LiteralType.INT);
       case TokenType.UINT:
-        return new Literal(this.parseUintLiteral(token.value), LiteralType.UINT);
+        return new Literal(this.parseUintLiteral(token), LiteralType.UINT);
       case TokenType.DOUBLE:
-        return new Literal(parseFloat(token.value), LiteralType.DOUBLE);
+        return new Literal(Number(token.value), LiteralType.DOUBLE);
       case TokenType.STRING:
         return new Literal(this.parseStringLiteral(token.value), LiteralType.STRING);
       case TokenType.BYTES:
@@ -435,24 +437,29 @@ export class Parser {
     }
   }
 
-  private parseIntLiteral(value: string): number {
-    if (value.startsWith('-0x') || value.startsWith('-0X')) {
-      return -parseInt(value.substring(3), 16);
-    } else if (value.startsWith('0x') || value.startsWith('0X')) {
-      return parseInt(value.substring(2), 16);
-    } else {
-      return parseInt(value, 10);
-    }
+  private parseIntLiteral(token: Token): bigint {
+    const value = token.value;
+    const negative = value.startsWith('-');
+    const digits = negative ? value.substring(1) : value;
+    const magnitude = BigInt(digits);
+    return this.checkRange(negative ? -magnitude : magnitude, token);
   }
 
-  private parseUintLiteral(value: string): number {
+  private parseUintLiteral(token: Token): bigint {
     // Remove 'u' or 'U' suffix
-    const number = value.substring(0, value.length - 1);
-    if (number.startsWith('0x') || number.startsWith('0X')) {
-      return parseInt(number.substring(2), 16);
-    } else {
-      return parseInt(number, 10);
+    const digits = token.value.substring(0, token.value.length - 1);
+    return this.checkRange(BigInt(digits), token);
+  }
+
+  private checkRange(value: bigint, token: Token): bigint {
+    if (value < INT64_MIN || value > INT64_MAX) {
+      throw new ParseError(
+        `Integer literal out of range: ${token.value}`,
+        token.line,
+        token.column
+      );
     }
+    return value;
   }
 
   private parseStringLiteral(value: string): string {
@@ -478,10 +485,106 @@ export class Parser {
     return content;
   }
 
-  private parseBytesLiteral(value: string): string {
+  private parseBytesLiteral(value: string): Uint8Array {
     // Remove b"..." or B'...' wrapper and process escapes
     const content = value.substring(2, value.length - 1);
-    return this.unescapeString(content);
+    return this.unescapeBytes(content);
+  }
+
+  /**
+   * Decodes the escapes of a bytes literal.
+   *
+   * Character escapes and plain text accumulate in a pending buffer that is
+   * UTF-8 encoded when flushed, while \xHH and octal escapes write a raw byte.
+   */
+  private unescapeBytes(value: string): Uint8Array {
+    const result: number[] = [];
+    let pending = '';
+    const flush = (): void => {
+      if (pending.length > 0) {
+        result.push(...utf8Encode(pending));
+        pending = '';
+      }
+    };
+    let i = 0;
+
+    while (i < value.length) {
+      if (value[i] !== '\\' || i + 1 >= value.length) {
+        pending += value[i]!;
+        i++;
+        continue;
+      }
+
+      const next = value[i + 1]!;
+      const simple = this.simpleEscape(next);
+      if (simple !== null) {
+        pending += simple;
+        i += 2;
+      } else if (next === 'x' && i + 4 <= value.length) {
+        flush();
+        result.push(parseInt(value.substring(i + 2, i + 4), 16));
+        i += 4;
+      } else if (next === 'u' && i + 6 <= value.length) {
+        pending += String.fromCharCode(parseInt(value.substring(i + 2, i + 6), 16));
+        i += 6;
+      } else if (next === 'U' && i + 10 <= value.length) {
+        pending += String.fromCodePoint(parseInt(value.substring(i + 2, i + 10), 16));
+        i += 10;
+      } else if (this.isOctal(value, i)) {
+        flush();
+        result.push(parseInt(value.substring(i + 1, i + 4), 8));
+        i += 4;
+      } else {
+        pending += value[i]!;
+        i++;
+      }
+    }
+
+    flush();
+    return Uint8Array.from(result);
+  }
+
+  private simpleEscape(value: string): string | null {
+    switch (value) {
+      case '\\':
+        return '\\';
+      case '"':
+        return '"';
+      case "'":
+        return "'";
+      case '`':
+        return '`';
+      case '?':
+        return '?';
+      case 'a':
+        return '\u0007';
+      case 'b':
+        return '\b';
+      case 'f':
+        return '\f';
+      case 'n':
+        return '\n';
+      case 'r':
+        return '\r';
+      case 't':
+        return '\t';
+      case 'v':
+        return '\u000B';
+      default:
+        return null;
+    }
+  }
+
+  private isOctal(value: string, index: number): boolean {
+    return (
+      index + 3 < value.length &&
+      value[index + 1]! >= '0' &&
+      value[index + 1]! <= '3' &&
+      value[index + 2]! >= '0' &&
+      value[index + 2]! <= '7' &&
+      value[index + 3]! >= '0' &&
+      value[index + 3]! <= '7'
+    );
   }
 
   private unescapeString(value: string): string {

@@ -31,6 +31,19 @@ export interface Functions {
   callFunction(name: string, args: any[]): any;
 
   /**
+   * Reports whether this library provides a qualified global function with the given name.
+   *
+   * The interpreter uses this to resolve namespaced calls such as `math.greatest(1, 2)`,
+   * which would otherwise be parsed as a field selection followed by a method call. Only
+   * names that are not shadowed by a bound variable are ever tested. Implementations that
+   * omit this method provide no namespaced functions.
+   *
+   * @param name The qualified function name, for example "math.greatest"
+   * @returns true if the name should be dispatched to callFunction
+   */
+  knows?(name: string): boolean;
+
+  /**
    * Calls a method on a target object.
    *
    * @param target The object to call the method on

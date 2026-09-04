@@ -2,7 +2,7 @@ export { Type } from './type.js';
 export { Timestamp } from './timestamp.js';
 export { Duration } from './duration.js';
 export { canonicalKey, KeySet, KeyMap } from './key.js';
-export { normalize, isPlainObject } from './normalize.js';
+export { normalize, normalizeResult, isPlainObject } from './normalize.js';
 export {
   INT64_MIN,
   INT64_MAX,
