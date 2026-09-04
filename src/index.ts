@@ -49,6 +49,9 @@ export { Parser, ParseError } from './parser/index.js';
 // Interpreter
 export { Interpreter } from './interpreter/index.js';
 
+// Printer
+export { Printer, PrinterOptions } from './printer/index.js';
+
 // Functions
 export type { Functions } from './functions/index.js';
 export { StandardFunctions, EvaluationError, ArgumentError } from './functions/index.js';
