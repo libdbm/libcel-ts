@@ -1,130 +1,265 @@
 /**
  * Utility helper methods for libcel.
- * Methods are exported so library users can call them directly.
+ *
+ * Functions are exported so library users can call them directly. They operate
+ * on the CEL value model: `bigint` for int, `number` for double, `Uint8Array`
+ * for bytes, `Map` for maps, and the `Timestamp`, `Duration` and `Type` classes.
  */
+import { ArgumentError, EvaluationError } from '../errors.js';
+import { Type } from '../values/type.js';
+import { Timestamp } from '../values/timestamp.js';
+import { Duration } from '../values/duration.js';
+import { fieldsOf } from '../values/civil.js';
+import { KeyMap } from '../values/key.js';
+import { isPlainObject } from '../values/normalize.js';
+import { isBytes, utf8Decode, utf8Encode, bytesEqual, bytesCompare } from '../values/bytes.js';
+import {
+  javaDoubleToString,
+  order,
+  truncateToInt64,
+  INT64_MIN,
+  INT64_MAX,
+} from '../values/numbers.js';
+
+export { order } from '../values/numbers.js';
+
+/**
+ * The largest collection or string an expression may generate.
+ *
+ * CEL evaluates untrusted input, so operations whose size is controlled by the
+ * expression itself refuse to allocate beyond this ceiling rather than exhausting
+ * the heap.
+ */
+export const LIMIT = 1_000_000;
+
+/** The largest number of seconds a duration may span, per the CEL specification. */
+export const SPAN = Duration.SPAN;
+
+const INT_TEXT = /^[+-]?\d+$/;
+const DOUBLE_TEXT = /^[+-]?(?:\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|Infinity|NaN)$/;
+
+/**
+ * Refuses a result that would exceed {@link LIMIT}.
+ *
+ * Bounding each operation's output, and not only its inputs, is what stops two
+ * separately legal values from being combined into one that exhausts the heap.
+ *
+ * @param size The size the operation is about to produce
+ * @param what The operation being bounded, named in the error message
+ * @throws EvaluationError if the size exceeds the limit
+ */
+export function limit(size: number | bigint, what: string): void {
+  if (size > LIMIT) {
+    throw new EvaluationError(`${what} exceeds the evaluation limit of ${LIMIT}`);
+  }
+}
+
+/** Reports whether the value is a CEL map (a Map, or a plain object not yet normalised). */
+export function isMap(value: unknown): value is Map<unknown, unknown> {
+  return value instanceof Map;
+}
+
+/** Counts the Unicode code points in a string. */
+export function codePointCount(value: string): number {
+  let count = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
+      const next = value.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        i++;
+      }
+    }
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Returns the UTF-16 offset of the given code point index, or -1 when the index
+ * exceeds the number of code points.
+ */
+export function offsetByCodePoints(value: string, index: number): number {
+  let offset = 0;
+  for (let remaining = index; remaining > 0; remaining--) {
+    if (offset >= value.length) {
+      return -1;
+    }
+    const code = value.charCodeAt(offset);
+    if (code >= 0xd800 && code <= 0xdbff && offset + 1 < value.length) {
+      const next = value.charCodeAt(offset + 1);
+      offset += next >= 0xdc00 && next <= 0xdfff ? 2 : 1;
+    } else {
+      offset++;
+    }
+  }
+  return offset > value.length ? -1 : offset;
+}
 
 /**
  * Returns the size/length of the given value.
  *
- * Supported types:
- * - String: number of characters
- * - Array: number of elements
- * - Map/Record: number of entries
- * - null: 0
+ * Strings are measured in Unicode code points; bytes, lists and maps by their
+ * element count; null is 0.
  *
- * @param value The value whose size should be computed; may be null
- * @returns The size for supported types, or 0 for null
- * @throws Error if the value type is unsupported
+ * @throws ArgumentError if the value type is unsupported
  */
-export function sizeOf(value: any): number {
+export function sizeOf(value: unknown): bigint {
   if (value === null || value === undefined) {
-    return 0;
+    return 0n;
   }
   if (typeof value === 'string') {
-    return value.length;
+    return BigInt(codePointCount(value));
+  }
+  if (isBytes(value)) {
+    return BigInt(value.length);
   }
   if (Array.isArray(value)) {
-    return value.length;
+    return BigInt(value.length);
   }
-  if (typeof value === 'object' && value !== null) {
-    return Object.keys(value).length;
+  if (value instanceof Map) {
+    return BigInt(value.size);
   }
-  throw new Error(`size() not supported for type: ${typeof value}`);
+  if (isPlainObject(value)) {
+    return BigInt(Object.keys(value).length);
+  }
+  throw new ArgumentError(`size() not supported for type: ${typeOf(value)}`);
 }
 
 /**
- * Converts the given value to a signed integer (number).
+ * Converts the given value to a signed 64-bit integer.
  *
- * Accepted inputs: number, string (parsed as integer), boolean (true=1, false=0)
+ * Accepted inputs: bigint, number (truncated toward zero), string holding a
+ * decimal integer, boolean (true = 1), and Timestamp (epoch seconds).
  *
- * @param value The value to convert
- * @returns The converted integer value
- * @throws Error if the value cannot be converted
+ * @throws ArgumentError if the value cannot be converted
  */
-export function asInt(value: any): number {
+export function asInt(value: unknown): bigint {
+  if (typeof value === 'bigint') {
+    return value;
+  }
   if (typeof value === 'number') {
-    return Math.trunc(value);
+    return truncateToInt64(value);
   }
   if (typeof value === 'string') {
-    const parsed = parseInt(value, 10);
-    if (isNaN(parsed)) {
-      throw new Error(`Cannot convert to int: ${value}`);
+    if (INT_TEXT.test(value.trim()) && value.trim() === value) {
+      const parsed = BigInt(value);
+      if (parsed >= INT64_MIN && parsed <= INT64_MAX) {
+        return parsed;
+      }
     }
-    return parsed;
+    throw new ArgumentError(`Cannot convert to int: ${value}`);
   }
   if (typeof value === 'boolean') {
-    return value ? 1 : 0;
+    return value ? 1n : 0n;
   }
-  throw new Error(`Cannot convert to int: ${value}`);
+  if (value instanceof Timestamp) {
+    return value.seconds;
+  }
+  throw new ArgumentError(`Cannot convert to int: ${asString(value)}`);
 }
 
 /**
- * Converts the given value to an unsigned integer.
+ * Converts the given value to an unsigned 64-bit integer.
  *
- * Negative inputs are not allowed and will result in an exception.
- *
- * @param value The value to convert
- * @returns The non-negative integer value
- * @throws Error if the value is negative or cannot be converted
+ * @throws ArgumentError if the value is negative or cannot be converted
  */
-export function asUInt(value: any): number {
+export function asUInt(value: unknown): bigint {
   const result = asInt(value);
-  if (result < 0) {
-    throw new Error(`Cannot convert negative value to uint: ${value}`);
+  if (result < 0n) {
+    throw new ArgumentError(`Cannot convert negative value to uint: ${asString(value)}`);
   }
   return result;
 }
 
 /**
- * Converts the given value to a double (number).
+ * Converts the given value to a double.
  *
- * Accepted inputs: number, string parsable as number
+ * Accepted inputs: number, bigint, and string parsable as a decimal number.
  *
- * @param value The value to convert
- * @returns The converted number value
- * @throws Error if the value cannot be converted
+ * @throws ArgumentError if the value cannot be converted
  */
-export function asDouble(value: any): number {
+export function asDouble(value: unknown): number {
   if (typeof value === 'number') {
     return value;
   }
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    if (isNaN(parsed)) {
-      throw new Error(`Cannot convert to double: ${value}`);
-    }
-    return parsed;
+  if (typeof value === 'bigint') {
+    return Number(value);
   }
-  throw new Error(`Cannot convert to double: ${value}`);
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (DOUBLE_TEXT.test(text)) {
+      return Number(text);
+    }
+    throw new ArgumentError(`Cannot convert to double: ${value}`);
+  }
+  throw new ArgumentError(`Cannot convert to double: ${asString(value)}`);
 }
 
 /**
  * Converts the given value to its string representation.
  *
- * Returns the literal string "null" for null/undefined values.
- *
- * @param value The value to stringify
- * @returns The string representation
+ * Returns "null" for null, decodes bytes as UTF-8, renders a Duration in the
+ * CEL form ("3600s"), a Timestamp in RFC 3339, a double the way Java does
+ * ("1.0", "1.0E10") and a Type as its bare name.
  */
-export function asString(value: any): string {
+export function asString(value: unknown): string {
   if (value === null || value === undefined) {
     return 'null';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return javaDoubleToString(value);
+  }
+  if (typeof value === 'bigint' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (isBytes(value)) {
+    return utf8Decode(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(asString).join(', ')}]`;
+  }
+  if (value instanceof Map) {
+    return `{${Array.from(value, ([k, v]) => `${asString(k)}=${asString(v)}`).join(', ')}}`;
+  }
+  if (isPlainObject(value)) {
+    return `{${Object.entries(value)
+      .map(([k, v]) => `${k}=${asString(v)}`)
+      .join(', ')}}`;
   }
   return String(value);
 }
 
 /**
+ * Converts the given value to bytes, encoding a string as UTF-8.
+ *
+ * @throws ArgumentError if the value cannot be converted
+ */
+export function asBytes(value: unknown): Uint8Array {
+  if (isBytes(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return utf8Encode(value);
+  }
+  throw new ArgumentError(`Cannot convert to bytes: ${asString(value)}`);
+}
+
+/**
  * Converts the given value to a boolean using common truthiness rules.
  *
- * Numbers are true if non-zero. Strings are true if non-empty.
- * Collections/maps are true if non-empty. Null is false.
- *
- * @param value The value to interpret
- * @returns The boolean interpretation
+ * Numbers are true if non-zero. Strings are true if non-empty. Collections and
+ * maps are true if non-empty. Null is false.
  */
-export function asBool(value: any): boolean {
+export function asBool(value: unknown): boolean {
   if (typeof value === 'boolean') {
     return value;
+  }
+  if (typeof value === 'bigint') {
+    return value !== 0n;
   }
   if (typeof value === 'number') {
     return value !== 0;
@@ -135,89 +270,247 @@ export function asBool(value: any): boolean {
   if (Array.isArray(value)) {
     return value.length > 0;
   }
-  if (typeof value === 'object' && value !== null) {
+  if (value instanceof Map) {
+    return value.size > 0;
+  }
+  if (isPlainObject(value)) {
     return Object.keys(value).length > 0;
   }
-  return value != null;
+  return value !== null && value !== undefined;
 }
 
 /**
- * Returns a simple type name for the given value.
+ * Returns the CEL type of the given value.
  *
- * Possible results: "null", "bool", "int", "double", "string", "list", "map", or "unknown"
- *
- * @param value The value whose type is to be described
- * @returns The simple type name
+ * @returns The type value, or Type.UNKNOWN for a value this library does not recognise
  */
-export function typeOf(value: any): string {
+export function typeOf(value: unknown): Type {
   if (value === null || value === undefined) {
-    return 'null';
+    return Type.NULL;
   }
-  if (typeof value === 'boolean') {
-    return 'bool';
+  switch (typeof value) {
+    case 'boolean':
+      return Type.BOOL;
+    case 'bigint':
+      return Type.INT;
+    case 'number':
+      return Type.DOUBLE;
+    case 'string':
+      return Type.STRING;
+    case 'object':
+      break;
+    default:
+      return Type.UNKNOWN;
   }
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? 'int' : 'double';
+  if (isBytes(value)) {
+    return Type.BYTES;
   }
-  if (typeof value === 'string') {
-    return 'string';
+  if (value instanceof Timestamp) {
+    return Type.TIMESTAMP;
+  }
+  if (value instanceof Duration) {
+    return Type.DURATION;
   }
   if (Array.isArray(value)) {
-    return 'list';
+    return Type.LIST;
   }
-  if (typeof value === 'object') {
-    return 'map';
+  if (value instanceof Map || isPlainObject(value)) {
+    return Type.MAP;
   }
-  return 'unknown';
+  if (value instanceof Type) {
+    return Type.TYPE;
+  }
+  return Type.UNKNOWN;
 }
 
 /**
- * Checks whether a map contains the given field name.
+ * Checks whether a map contains the given key.
  *
- * @param target The map-like object to check (must be an object to return true/false)
- * @param field The field/key to look for (must be a string)
- * @returns true if target is a Map/object and contains the given key; false otherwise
+ * @returns true if target is a map and contains the key under CEL equality; false otherwise
  */
-export function has(target: any, field: any): boolean {
-  if (typeof target === 'object' && target !== null && typeof field === 'string') {
-    return field in target;
+export function has(target: unknown, field: unknown): boolean {
+  if (target instanceof Map) {
+    return contains(target, field);
+  }
+  if (isPlainObject(target)) {
+    return typeof field === 'string' && Object.prototype.hasOwnProperty.call(target, field);
   }
   return false;
 }
 
 /**
- * Tests whether the given regular expression matches any part of the text.
+ * Reports whether the map holds the given key, comparing keys the way CEL compares values.
  *
- * Uses RegExp pattern matching with find semantics.
- *
- * @param text The input text
- * @param pattern The regular expression pattern
- * @returns true if the pattern matches anywhere in the text; false otherwise
- * @throws Error if the pattern is invalid
+ * An integer key therefore matches a double probe of the same value, so
+ * membership, indexing and presence tests all agree.
  */
-export function matches(text: string, pattern: string): boolean {
-  try {
-    const regex = new RegExp(pattern);
-    return regex.test(text);
-  } catch {
-    throw new Error(`Invalid regex pattern: ${pattern}`);
+export function contains(map: Map<unknown, unknown>, key: unknown): boolean {
+  if (map.has(key)) {
+    return true;
   }
+  for (const candidate of map.keys()) {
+    if (equals(candidate, key)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
- * Returns the maximum element from a non-empty array of values.
+ * Returns the value stored under the given key, comparing keys the way CEL compares values.
  *
- * Comparison rules follow compare(). All elements must be mutually comparable.
- *
- * @param values A non-empty array of values
- * @returns The maximum value in the array
- * @throws Error if the array is empty or values are not comparable
+ * @returns The matching value, or undefined when no key matches
  */
-export function max(values: any[]): any {
-  if (values.length === 0) {
-    throw new Error('max() requires at least one argument');
+export function select(map: Map<unknown, unknown>, key: unknown): unknown {
+  if (map.has(key)) {
+    return map.get(key);
   }
+  for (const [candidate, value] of map) {
+    if (equals(candidate, key)) {
+      return value;
+    }
+  }
+  return undefined;
+}
 
+/**
+ * Tests whether the given regular expression matches any part of the text.
+ *
+ * @throws ArgumentError if the pattern is invalid
+ */
+export function matches(text: string, pattern: string): boolean {
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern);
+  } catch {
+    throw new ArgumentError(`Invalid regular expression: ${pattern}`);
+  }
+  return regex.test(text);
+}
+
+/**
+ * Parses or provides a Timestamp from the given value.
+ *
+ * Accepted inputs: null returns the current time, a string is parsed as RFC 3339,
+ * a bigint is treated as epoch seconds, and a Date or Timestamp is converted.
+ *
+ * @throws ArgumentError if the input type or format is invalid
+ */
+export function timestamp(value: unknown): Timestamp {
+  if (value === null || value === undefined) {
+    return Timestamp.now();
+  }
+  if (value instanceof Timestamp) {
+    return value;
+  }
+  if (value instanceof Date) {
+    return Timestamp.fromDate(value);
+  }
+  if (typeof value === 'string') {
+    return Timestamp.parse(value);
+  }
+  if (typeof value === 'bigint') {
+    return Timestamp.ofEpochSeconds(value);
+  }
+  throw new ArgumentError(`Invalid timestamp value: ${asString(value)}`);
+}
+
+/**
+ * Parses a CEL duration string such as "300ms", "-1.5h" or "2h45m".
+ *
+ * @throws ArgumentError if the format or unit is invalid
+ */
+export function duration(value: string): Duration {
+  return Duration.parse(value);
+}
+
+/**
+ * Converts the given value to a Duration: a Duration is returned as is and a
+ * string is parsed.
+ *
+ * @throws ArgumentError if the value cannot be converted
+ */
+export function asDuration(value: unknown): Duration {
+  if (value instanceof Duration) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return Duration.parse(value);
+  }
+  throw new ArgumentError(`Cannot convert to duration: ${asString(value)}`);
+}
+
+function at(value: unknown, zone: unknown) {
+  const instant = value instanceof Timestamp ? value : timestamp(value);
+  return { instant, fields: fieldsOf(instant.seconds, zone ?? null) };
+}
+
+/** Returns the day of month (1-31) for the timestamp, in the zone or UTC. */
+export function dateOf(value: unknown, zone: unknown = null): bigint {
+  return BigInt(at(value, zone).fields.day);
+}
+
+/** Returns the zero-based month (0-11) for the timestamp, in the zone or UTC. */
+export function monthOf(value: unknown, zone: unknown = null): bigint {
+  return BigInt(at(value, zone).fields.month - 1);
+}
+
+/** Returns the year for the timestamp, in the zone or UTC. */
+export function yearOf(value: unknown, zone: unknown = null): bigint {
+  return at(value, zone).fields.year;
+}
+
+/** Returns the hour of day for a timestamp, or the whole number of hours in a duration. */
+export function hoursOf(value: unknown, zone: unknown = null): bigint {
+  if (value instanceof Duration) {
+    return value.toHours();
+  }
+  return BigInt(at(value, zone).fields.hour);
+}
+
+/** Returns the minute for a timestamp, or the whole number of minutes in a duration. */
+export function minutesOf(value: unknown, zone: unknown = null): bigint {
+  if (value instanceof Duration) {
+    return value.toMinutes();
+  }
+  return BigInt(at(value, zone).fields.minute);
+}
+
+/** Returns the second for a timestamp, or the whole number of seconds in a duration. */
+export function secondsOf(value: unknown, zone: unknown = null): bigint {
+  if (value instanceof Duration) {
+    return value.toSeconds();
+  }
+  return BigInt(at(value, zone).fields.second);
+}
+
+/** Returns the millisecond for a timestamp, or the whole number of milliseconds in a duration. */
+export function millisecondsOf(value: unknown, zone: unknown = null): bigint {
+  if (value instanceof Duration) {
+    return value.toMillis();
+  }
+  return BigInt(Math.floor(at(value, zone).instant.nanos / 1_000_000));
+}
+
+/** Returns the day of week for the timestamp, where Sunday is 0. */
+export function weekdayOf(value: unknown, zone: unknown = null): bigint {
+  return BigInt(at(value, zone).fields.weekday);
+}
+
+/** Returns the zero-based day of year for the timestamp. */
+export function ordinalOf(value: unknown, zone: unknown = null): bigint {
+  return BigInt(at(value, zone).fields.dayOfYear - 1);
+}
+
+/**
+ * Returns the maximum element from a non-empty list of values.
+ *
+ * @throws ArgumentError if the list is empty or values are not comparable
+ */
+export function max(values: unknown[]): unknown {
+  if (values.length === 0) {
+    throw new ArgumentError('max() requires at least one argument');
+  }
   let result = values[0];
   for (let i = 1; i < values.length; i++) {
     if (compare(values[i], result) > 0) {
@@ -228,19 +521,14 @@ export function max(values: any[]): any {
 }
 
 /**
- * Returns the minimum element from a non-empty array of values.
+ * Returns the minimum element from a non-empty list of values.
  *
- * Comparison rules follow compare(). All elements must be mutually comparable.
- *
- * @param values A non-empty array of values
- * @returns The minimum value in the array
- * @throws Error if the array is empty or values are not comparable
+ * @throws ArgumentError if the list is empty or values are not comparable
  */
-export function min(values: any[]): any {
+export function min(values: unknown[]): unknown {
   if (values.length === 0) {
-    throw new Error('min() requires at least one argument');
+    throw new ArgumentError('min() requires at least one argument');
   }
-
   let result = values[0];
   for (let i = 1; i < values.length; i++) {
     if (compare(values[i], result) < 0) {
@@ -251,119 +539,117 @@ export function min(values: any[]): any {
 }
 
 /**
- * Compares two values using a common set of rules.
+ * Compares two values for deep equality.
  *
- * Supported comparisons: numbers (by numeric value), strings (lexicographically),
- * booleans, arrays (lexicographically).
- *
- * @param a The first value
- * @param b The second value
- * @returns A negative number, zero, or a positive number as a is less than, equal to, or greater than b
- * @throws Error if the values cannot be compared
+ * Lists and maps are compared element by element, numbers are compared
+ * numerically across int and double, bytes by content, and NaN is never equal
+ * to anything.
  */
-export function compare(a: any, b: any): number {
-  if (a === null && b === null) {
-    return 0;
-  }
-  if (a === null) {
-    return -1;
-  }
-  if (b === null) {
-    return 1;
-  }
-
-  // Number comparison
-  if (typeof a === 'number' && typeof b === 'number') {
-    return a - b;
-  }
-
-  // String comparison
-  if (typeof a === 'string' && typeof b === 'string') {
-    return a.localeCompare(b);
-  }
-
-  // Boolean comparison
-  if (typeof a === 'boolean' && typeof b === 'boolean') {
-    return a === b ? 0 : a ? 1 : -1;
-  }
-
-  // Array comparison (lexicographic)
-  if (Array.isArray(a) && Array.isArray(b)) {
-    const size = Math.min(a.length, b.length);
-    for (let i = 0; i < size; i++) {
-      const cmp = compare(a[i], b[i]);
-      if (cmp !== 0) {
-        return cmp;
-      }
-    }
-    return a.length - b.length;
-  }
-
-  throw new Error(`Cannot compare types: ${typeof a} and ${typeof b}`);
-}
-
-/**
- * Deep equality check for CEL values.
- *
- * @param left First value
- * @param right Second value
- * @returns true if values are deeply equal
- */
-export function deepEquals(left: any, right: any): boolean {
+export function equals(left: unknown, right: unknown): boolean {
   if (left === null || left === undefined || right === null || right === undefined) {
-    return left === right;
+    return (left ?? null) === (right ?? null);
   }
-
-  // Array equality
+  if (isBytes(left) && isBytes(right)) {
+    return bytesEqual(left, right);
+  }
   if (Array.isArray(left) && Array.isArray(right)) {
     if (left.length !== right.length) {
       return false;
     }
     for (let i = 0; i < left.length; i++) {
-      if (!deepEquals(left[i], right[i])) {
+      if (!equals(left[i], right[i])) {
         return false;
       }
     }
     return true;
   }
-
-  // Object/Map equality
-  if (typeof left === 'object' && typeof right === 'object' && !Array.isArray(left) && !Array.isArray(right)) {
-    const leftKeys = Object.keys(left);
-    const rightKeys = Object.keys(right);
-    if (leftKeys.length !== rightKeys.length) {
+  const leftMap = toMap(left);
+  const rightMap = toMap(right);
+  if (leftMap && rightMap) {
+    if (leftMap.size !== rightMap.size) {
       return false;
     }
-    for (const key of leftKeys) {
-      if (!(key in right)) {
-        return false;
-      }
-      if (!deepEquals(left[key], right[key])) {
+    // Indexed by CEL key equality, so an int key matches a double probe
+    const indexed = new KeyMap<unknown>();
+    for (const [key, value] of rightMap) {
+      indexed.set(key, value);
+    }
+    for (const [key, value] of leftMap) {
+      if (!indexed.has(key) || !equals(value, indexed.get(key))) {
         return false;
       }
     }
     return true;
   }
-
-  // Numeric equality with type coercion
-  if (typeof left === 'number' && typeof right === 'number') {
-    return left === right;
+  if (
+    (typeof left === 'bigint' || typeof left === 'number') &&
+    (typeof right === 'bigint' || typeof right === 'number')
+  ) {
+    if (Number.isNaN(left) || Number.isNaN(right)) {
+      return false;
+    }
+    return order(left, right) === 0;
   }
-
-  // Standard equality
+  if (left instanceof Timestamp || left instanceof Duration || left instanceof Type) {
+    return left.equals(right);
+  }
   return left === right;
 }
 
+function toMap(value: unknown): Map<unknown, unknown> | null {
+  if (value instanceof Map) {
+    return value;
+  }
+  if (isPlainObject(value)) {
+    return new Map(Object.entries(value));
+  }
+  return null;
+}
+
 /**
- * Helper for array contains with deep equality.
- *
- * @param array The array to search
- * @param value The value to find
- * @returns true if the array contains the value (using deep equality)
+ * Deep equality check for CEL values. Alias of {@link equals}.
  */
-export function containsInArray(array: any[], value: any): boolean {
+export const deepEquals = equals;
+
+/**
+ * Compares two values using a common set of rules.
+ *
+ * Supported comparisons: numbers (exactly, across int and double), strings (by
+ * UTF-16 code unit), booleans, timestamps, durations and bytes.
+ *
+ * @throws ArgumentError if the values cannot be compared
+ */
+export function compare(a: unknown, b: unknown): number {
+  if (
+    (typeof a === 'bigint' || typeof a === 'number') &&
+    (typeof b === 'bigint' || typeof b === 'number')
+  ) {
+    return order(a, b);
+  }
+  if (typeof a === 'string' && typeof b === 'string') {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  if (typeof a === 'boolean' && typeof b === 'boolean') {
+    return a === b ? 0 : a ? 1 : -1;
+  }
+  if (a instanceof Timestamp && b instanceof Timestamp) {
+    return a.compareTo(b);
+  }
+  if (a instanceof Duration && b instanceof Duration) {
+    return a.compareTo(b);
+  }
+  if (isBytes(a) && isBytes(b)) {
+    return bytesCompare(a, b);
+  }
+  throw new ArgumentError('Cannot compare values of different types');
+}
+
+/**
+ * Reports whether the array contains the value under CEL equality.
+ */
+export function containsInArray(array: unknown[], value: unknown): boolean {
   for (const item of array) {
-    if (deepEquals(item, value)) {
+    if (equals(item, value)) {
       return true;
     }
   }

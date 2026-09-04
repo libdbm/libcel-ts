@@ -2,15 +2,18 @@ import { Parser, Interpreter } from '../src/index.js';
 
 /** Example demonstrating the CEL interpreter usage. */
 
-function format(value: any): string {
+function format(value: unknown): string {
   if (typeof value === 'string') {
     return `"${value}"`;
   }
-  if (Array.isArray(value)) {
-    return JSON.stringify(value);
+  if (typeof value === 'bigint') {
+    return `${value}n`;
   }
-  if (typeof value === 'object' && value !== null) {
-    return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map(format).join(', ')}]`;
+  }
+  if (value instanceof Map) {
+    return `{${Array.from(value, ([k, v]) => `${format(k)}: ${format(v)}`).join(', ')}}`;
   }
   return String(value);
 }
@@ -27,7 +30,7 @@ function evaluate(expression: string): void {
   }
 }
 
-function evaluateWithVars(expression: string, vars: Record<string, any>): void {
+function evaluateWithVars(expression: string, vars: Record<string, unknown>): void {
   try {
     const parser = new Parser(expression);
     const ast = parser.parse();
@@ -41,9 +44,10 @@ function evaluateWithVars(expression: string, vars: Record<string, any>): void {
 
 // Example 1: Simple arithmetic
 console.log('=== Simple Arithmetic ===');
-evaluate('2 + 3 * 4');
-evaluate('10 / 3');
-evaluate('10 % 3');
+evaluate('2 + 3 * 4'); // 14n
+evaluate('10 / 3'); // 3n, integer division truncates
+evaluate('10.0 / 3'); // 3.3333333333333335
+evaluate('10 % 3'); // 1n
 
 // Example 2: String operations
 console.log('\n=== String Operations ===');
@@ -58,7 +62,7 @@ evaluate('!false');
 
 // Example 4: Variables
 console.log('\n=== Variables ===');
-const vars: Record<string, any> = {
+const vars: Record<string, unknown> = {
   name: 'Alice',
   age: 30,
   score: 85.5,
@@ -92,6 +96,7 @@ const person = {
 evaluateWithVars('person.name', { person });
 evaluateWithVars('person["city"]', { person });
 evaluateWithVars('has(person, "age")', { person });
+evaluateWithVars('has(person.email)', { person });
 
 // Example 7: Macro functions
 console.log('\n=== Macro Functions ===');
@@ -129,3 +134,10 @@ console.log('\n=== Deep Equality and Comparison ===');
 evaluate('[1, 2, 3] == [1, 2, 3]');
 evaluate('[1, 2] < [1, 3]');
 evaluate('[1, 2] < [1, 2, 3]');
+
+// Example 11: Extension libraries and time
+console.log('\n=== Extensions ===');
+evaluate("'a,b,c'.split(',', 2)");
+evaluate('math.round(-1.5)');
+evaluate("duration('1h30m').getMinutes()");
+evaluate("string(timestamp('2024-03-05T14:30:45Z') + duration('1h'))");

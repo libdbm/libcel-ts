@@ -49,8 +49,8 @@ export class Program {
    * });
    * ```
    */
-  evaluate(variables: Record<string, any> = {}): any {
-    const interpreter = new Interpreter({ ...variables }, this.functions);
+  evaluate(variables: Record<string, unknown> | Map<string, unknown> = {}): unknown {
+    const interpreter = new Interpreter(variables, this.functions);
     return interpreter.evaluate(this.ast);
   }
 }

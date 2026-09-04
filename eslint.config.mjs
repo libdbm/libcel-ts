@@ -5,16 +5,20 @@ import tsparser from '@typescript-eslint/parser';
 export default [
   eslint.configs.recommended,
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'tests/**/*.ts'],
     plugins: {
       '@typescript-eslint': tseslint,
     },
     languageOptions: {
       parser: tsparser,
+      globals: {
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+      },
       parserOptions: {
         ecmaVersion: 2020,
         sourceType: 'module',
-        project: './tsconfig.json',
+        project: './tsconfig.test.json',
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -26,6 +30,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**', '*.config.*', 'tests/**', 'examples/**'],
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**', '*.config.*', 'examples/**'],
   },
 ];

@@ -2,13 +2,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CEL } from '../src/cel.js';
 import { StandardFunctions } from '../src/functions/index.js';
 import { ParseError } from '../src/parser/index.js';
+import { Type } from '../src/values/type.js';
+import { EvaluationError } from '../src/errors.js';
 
 describe('CEL', () => {
   describe('Basic Usage', () => {
     it('should evaluate simple expressions', () => {
       const cel = new CEL();
-      expect(cel.eval('2 + 3 * 4', {})).toBe(14);
-      expect(cel.eval('(2 + 3) * 4', {})).toBe(20);
+      expect(cel.eval('2 + 3 * 4', {})).toBe(14n);
+      expect(cel.eval('(2 + 3) * 4', {})).toBe(20n);
     });
 
     it('should work with variables', () => {
@@ -65,12 +67,12 @@ describe('CEL', () => {
   describe('Static Methods', () => {
     it('should support static compile', () => {
       const program = CEL.compile('x * 2', new StandardFunctions());
-      expect(program.evaluate({ x: 21 })).toBe(42);
+      expect(program.evaluate({ x: 21 })).toBe(42n);
     });
 
     it('should support static eval', () => {
       const result = CEL.eval('x + y', new StandardFunctions(), { x: 10, y: 20 });
-      expect(result).toBe(30);
+      expect(result).toBe(30n);
     });
   });
 
@@ -98,10 +100,10 @@ describe('CEL', () => {
   describe('Type Conversions', () => {
     it('should convert types', () => {
       const cel = new CEL();
-      expect(cel.eval('int("42")', {})).toBe(42);
+      expect(cel.eval('int("42")', {})).toBe(42n);
       expect(cel.eval('double(42)', {})).toBe(42);
       expect(cel.eval('string(42)', {})).toBe('42');
-      expect(cel.eval('type([1, 2, 3])', {})).toBe('list');
+      expect(cel.eval('type([1, 2, 3])', {})).toBe(Type.LIST);
     });
   });
 
@@ -117,19 +119,19 @@ describe('CEL', () => {
         expect(cel.eval('null', {})).toBeNull();
         expect(cel.eval('true', {})).toBe(true);
         expect(cel.eval('false', {})).toBe(false);
-        expect(cel.eval('42', {})).toBe(42);
+        expect(cel.eval('42', {})).toBe(42n);
         expect(cel.eval('3.14', {})).toBe(3.14);
         expect(cel.eval('"hello"', {})).toBe('hello');
         expect(cel.eval('r"raw string"', {})).toBe('raw string');
       });
 
       it('should parse hexadecimal integers', () => {
-        expect(cel.eval('0x10', {})).toBe(16);
-        expect(cel.eval('0xFF', {})).toBe(255);
-        expect(cel.eval('0x1A', {})).toBe(26);
-        expect(cel.eval('-0x10', {})).toBe(-16);
-        expect(cel.eval('0x10u', {})).toBe(16);
-        expect(cel.eval('0xFFu', {})).toBe(255);
+        expect(cel.eval('0x10', {})).toBe(16n);
+        expect(cel.eval('0xFF', {})).toBe(255n);
+        expect(cel.eval('0x1A', {})).toBe(26n);
+        expect(cel.eval('-0x10', {})).toBe(-16n);
+        expect(cel.eval('0x10u', {})).toBe(16n);
+        expect(cel.eval('0xFFu', {})).toBe(255n);
       });
 
       it('should parse strings with escape sequences', () => {
@@ -153,17 +155,18 @@ describe('CEL', () => {
 
     describe('Operators', () => {
       it('should evaluate arithmetic operators', () => {
-        expect(cel.eval('2 + 3', {})).toBe(5);
-        expect(cel.eval('10 - 4', {})).toBe(6);
-        expect(cel.eval('3 * 4', {})).toBe(12);
-        expect(cel.eval('15 / 3', {})).toBe(5);
-        expect(cel.eval('17 % 5', {})).toBe(2);
+        expect(cel.eval('2 + 3', {})).toBe(5n);
+        expect(cel.eval('10 - 4', {})).toBe(6n);
+        expect(cel.eval('3 * 4', {})).toBe(12n);
+        expect(cel.eval('15 / 3', {})).toBe(5n);
+        expect(cel.eval('15.0 / 3', {})).toBe(5);
+        expect(cel.eval('17 % 5', {})).toBe(2n);
       });
 
       it('should respect operator precedence', () => {
-        expect(cel.eval('2 + 3 * 4', {})).toBe(14);
-        expect(cel.eval('(2 + 3) * 4', {})).toBe(20);
-        expect(cel.eval('10 - 2 * 3', {})).toBe(4);
+        expect(cel.eval('2 + 3 * 4', {})).toBe(14n);
+        expect(cel.eval('(2 + 3) * 4', {})).toBe(20n);
+        expect(cel.eval('10 - 2 * 3', {})).toBe(4n);
       });
 
       it('should evaluate comparison operators', () => {
@@ -185,8 +188,8 @@ describe('CEL', () => {
       });
 
       it('should evaluate conditional expressions', () => {
-        expect(cel.eval('true ? 1 : 2', {})).toBe(1);
-        expect(cel.eval('false ? 1 : 2', {})).toBe(2);
+        expect(cel.eval('true ? 1 : 2', {})).toBe(1n);
+        expect(cel.eval('false ? 1 : 2', {})).toBe(2n);
         expect(cel.eval('x > 5 ? "big" : "small"', { x: 10 })).toBe('big');
         expect(cel.eval('x > 5 ? "big" : "small"', { x: 3 })).toBe('small');
       });
@@ -195,24 +198,34 @@ describe('CEL', () => {
     describe('Collections', () => {
       it('should parse list literals', () => {
         expect(cel.eval('[]', {})).toEqual([]);
-        expect(cel.eval('[1, 2, 3]', {})).toEqual([1, 2, 3]);
-        expect(cel.eval('[1, "two", true]', {})).toEqual([1, 'two', true]);
+        expect(cel.eval('[1, 2, 3]', {})).toEqual([1n, 2n, 3n]);
+        expect(cel.eval('[1, "two", true]', {})).toEqual([1n, 'two', true]);
       });
 
       it('should parse map literals', () => {
-        expect(cel.eval('{}', {})).toEqual({});
-        expect(cel.eval('{"a": 1, "b": 2}', {})).toEqual({ a: 1, b: 2 });
-        expect(cel.eval('{1: "one", 2: "two"}', {})).toEqual({ 1: 'one', 2: 'two' });
+        expect(cel.eval('{}', {})).toEqual(new Map());
+        expect(cel.eval('{"a": 1, "b": 2}', {})).toEqual(
+          new Map([
+            ['a', 1n],
+            ['b', 2n],
+          ])
+        );
+        expect(cel.eval('{1: "one", 2: "two"}', {})).toEqual(
+          new Map([
+            [1n, 'one'],
+            [2n, 'two'],
+          ])
+        );
       });
 
       it('should handle field selection', () => {
-        expect(cel.eval('obj.field', { obj: { field: 42 } })).toBe(42);
+        expect(cel.eval('obj.field', { obj: { field: 42 } })).toBe(42n);
         expect(cel.eval('obj.nested.field', { obj: { nested: { field: 'value' } } })).toBe('value');
       });
 
       it('should handle indexing', () => {
-        expect(cel.eval('list[0]', { list: [1, 2, 3] })).toBe(1);
-        expect(cel.eval('list[1]', { list: [1, 2, 3] })).toBe(2);
+        expect(cel.eval('list[0]', { list: [1, 2, 3] })).toBe(1n);
+        expect(cel.eval('list[1]', { list: [1, 2, 3] })).toBe(2n);
         expect(cel.eval('map["key"]', { map: { key: 'value' } })).toBe('value');
         expect(cel.eval('str[0]', { str: 'hello' })).toBe('h');
       });
@@ -242,11 +255,11 @@ describe('CEL', () => {
 
     describe('List Operations', () => {
       it('should concatenate lists', () => {
-        expect(cel.eval('[1, 2] + [3, 4]', {})).toEqual([1, 2, 3, 4]);
+        expect(cel.eval('[1, 2] + [3, 4]', {})).toEqual([1n, 2n, 3n, 4n]);
       });
 
       it('should multiply lists', () => {
-        expect(cel.eval('[1, 2] * 2', {})).toEqual([1, 2, 1, 2]);
+        expect(cel.eval('[1, 2] * 2', {})).toEqual([1n, 2n, 1n, 2n]);
       });
 
       it('should check list membership', () => {
@@ -257,20 +270,22 @@ describe('CEL', () => {
 
     describe('Functions', () => {
       it('should call built-in functions', () => {
-        expect(cel.eval('size("hello")', {})).toBe(5);
-        expect(cel.eval('size([1, 2, 3])', {})).toBe(3);
-        expect(cel.eval('int("42")', {})).toBe(42);
+        expect(cel.eval('size("hello")', {})).toBe(5n);
+        expect(cel.eval('size([1, 2, 3])', {})).toBe(3n);
+        expect(cel.eval('int("42")', {})).toBe(42n);
         expect(cel.eval('string(42)', {})).toBe('42');
       });
 
       it('should evaluate type function', () => {
-        expect(cel.eval('type(null)', {})).toBe('null');
-        expect(cel.eval('type(true)', {})).toBe('bool');
-        expect(cel.eval('type(42)', {})).toBe('int');
-        expect(cel.eval('type(3.14)', {})).toBe('double');
-        expect(cel.eval('type("hello")', {})).toBe('string');
-        expect(cel.eval('type([1, 2])', {})).toBe('list');
-        expect(cel.eval('type({"a": 1})', {})).toBe('map');
+        expect(cel.eval('type(null)', {})).toBe(Type.NULL);
+        expect(cel.eval('type(true)', {})).toBe(Type.BOOL);
+        expect(cel.eval('type(42)', {})).toBe(Type.INT);
+        expect(cel.eval('type(3.14)', {})).toBe(Type.DOUBLE);
+        expect(cel.eval('type("hello")', {})).toBe(Type.STRING);
+        expect(cel.eval('type([1, 2])', {})).toBe(Type.LIST);
+        expect(cel.eval('type({"a": 1})', {})).toBe(Type.MAP);
+        expect(cel.eval('type(42) == int', {})).toBe(true);
+        expect(cel.eval('type(type(42)) == type', {})).toBe(true);
       });
 
       it('should evaluate has function', () => {
@@ -285,8 +300,8 @@ describe('CEL', () => {
       });
 
       it('should evaluate max and min functions', () => {
-        expect(cel.eval('max(1, 2, 3)', {})).toBe(3);
-        expect(cel.eval('min(1, 2, 3)', {})).toBe(1);
+        expect(cel.eval('max(1, 2, 3)', {})).toBe(3n);
+        expect(cel.eval('min(1, 2, 3)', {})).toBe(1n);
         expect(cel.eval('max("a", "b", "c")', {})).toBe('c');
         expect(cel.eval('min("a", "b", "c")', {})).toBe('a');
       });
@@ -315,15 +330,15 @@ describe('CEL', () => {
 
     describe('Macro Functions', () => {
       it('should transform with map', () => {
-        expect(cel.eval('[1, 2, 3].map(x, x * 2)', {})).toEqual([2, 4, 6]);
-        expect(cel.eval('[1, 2, 3].map(n, n + 10)', {})).toEqual([11, 12, 13]);
+        expect(cel.eval('[1, 2, 3].map(x, x * 2)', {})).toEqual([2n, 4n, 6n]);
+        expect(cel.eval('[1, 2, 3].map(n, n + 10)', {})).toEqual([11n, 12n, 13n]);
         expect(cel.eval('["a", "b", "c"].map(s, s + "!")', {})).toEqual(['a!', 'b!', 'c!']);
-        expect(cel.eval('[1, 2, 3].map(x, x * x)', {})).toEqual([1, 4, 9]);
+        expect(cel.eval('[1, 2, 3].map(x, x * x)', {})).toEqual([1n, 4n, 9n]);
       });
 
       it('should filter lists', () => {
-        expect(cel.eval('[1, 2, 3, 4, 5].filter(x, x > 2)', {})).toEqual([3, 4, 5]);
-        expect(cel.eval('[1, 2, 3, 4, 5].filter(x, x % 2 == 0)', {})).toEqual([2, 4]);
+        expect(cel.eval('[1, 2, 3, 4, 5].filter(x, x > 2)', {})).toEqual([3n, 4n, 5n]);
+        expect(cel.eval('[1, 2, 3, 4, 5].filter(x, x % 2 == 0)', {})).toEqual([2n, 4n]);
         expect(cel.eval('["a", "ab", "abc"].filter(s, size(s) > 1)', {})).toEqual(['ab', 'abc']);
       });
 
@@ -350,8 +365,12 @@ describe('CEL', () => {
       });
 
       it('should chain macro functions', () => {
-        expect(cel.eval('[1, 2, 3, 4, 5].filter(x, x > 2).map(x, x * 2)', {})).toEqual([6, 8, 10]);
-        expect(cel.eval('[1, 2, 3, 4].map(x, x * 2).filter(x, x > 4)', {})).toEqual([6, 8]);
+        expect(cel.eval('[1, 2, 3, 4, 5].filter(x, x > 2).map(x, x * 2)', {})).toEqual([
+          6n,
+          8n,
+          10n,
+        ]);
+        expect(cel.eval('[1, 2, 3, 4].map(x, x * 2).filter(x, x > 4)', {})).toEqual([6n, 8n]);
       });
 
       it('should work with objects in lists', () => {
@@ -361,10 +380,16 @@ describe('CEL', () => {
           { name: 'Charlie', age: 35 },
         ];
         expect(cel.eval('users.map(u, u.name)', { users })).toEqual(['Alice', 'Bob', 'Charlie']);
-        expect(cel.eval('users.map(u, u.age * 2)', { users })).toEqual([60, 50, 70]);
+        expect(cel.eval('users.map(u, u.age * 2)', { users })).toEqual([60n, 50n, 70n]);
         expect(cel.eval('users.filter(u, u.age > 28)', { users })).toEqual([
-          { name: 'Alice', age: 30 },
-          { name: 'Charlie', age: 35 },
+          new Map<string, unknown>([
+            ['name', 'Alice'],
+            ['age', 30n],
+          ]),
+          new Map<string, unknown>([
+            ['name', 'Charlie'],
+            ['age', 35n],
+          ]),
         ]);
         expect(cel.eval('users.all(u, u.age >= 25)', { users })).toBe(true);
         expect(cel.eval('users.exists(u, u.age > 33)', { users })).toBe(true);
@@ -373,8 +398,8 @@ describe('CEL', () => {
 
       it('should preserve variable scope', () => {
         const vars = { x: 100, nums: [1, 2, 3] };
-        expect(cel.eval('[1, 2, 3].map(x, x * 2)', vars)).toEqual([2, 4, 6]);
-        expect(cel.eval('x', vars)).toBe(100); // x should be restored
+        expect(cel.eval('[1, 2, 3].map(x, x * 2)', vars)).toEqual([2n, 4n, 6n]);
+        expect(cel.eval('x', vars)).toBe(100n); // x should be restored
       });
     });
 
@@ -406,7 +431,7 @@ describe('CEL', () => {
       it('should evaluate complex boolean logic', () => {
         expect(cel.eval('x > 0 && x < 10', { x: 5 })).toBe(true);
         expect(cel.eval('x > 0 && x < 10', { x: 15 })).toBe(false);
-        expect(cel.eval('(x + y) * z', { x: 2, y: 3, z: 4 })).toBe(20);
+        expect(cel.eval('(x + y) * z', { x: 2, y: 3, z: 4 })).toBe(20n);
       });
 
       it('should handle nested data structures', () => {
@@ -417,4 +442,132 @@ describe('CEL', () => {
       });
     });
   });
+  describe('Bytes Literals', () => {
+    it('should parse bytes literals with either prefix case', () => {
+      const cel = new CEL();
+      const hello = new TextEncoder().encode('hello');
+      const world = new TextEncoder().encode('world');
+      expect(cel.eval('b"hello"', {})).toEqual(hello);
+      expect(cel.eval('B"hello"', {})).toEqual(hello);
+      expect(cel.eval("b'world'", {})).toEqual(world);
+      expect(cel.eval("B'world'", {})).toEqual(world);
+    });
+  });
+
+  describe('Short-Circuit Evaluation', () => {
+    it('should not evaluate the right operand when the left decides', () => {
+      let count = 0;
+      const functions = new CustomFunctions({
+        check: (args) => {
+          count++;
+          return args[0];
+        },
+      });
+      const cel = new CEL(functions);
+
+      count = 0;
+      expect(cel.eval('false && check(true)', {})).toBe(false);
+      expect(count).toBe(0);
+
+      count = 0;
+      expect(cel.eval('true || check(false)', {})).toBe(true);
+      expect(count).toBe(0);
+    });
+
+    it('should convert types', () => {
+      const cel = new CEL();
+      expect(cel.eval('int(3.14)', {})).toBe(3n);
+      expect(cel.eval('double(42)', {})).toBe(42);
+      expect(cel.eval('string(true)', {})).toBe('true');
+      expect(cel.eval('bool(1)', {})).toBe(true);
+      expect(cel.eval('bool(0)', {})).toBe(false);
+    });
+  });
+
+  describe('Programs', () => {
+    it('should be compiled and reused', () => {
+      const program = new CEL().compile('x * 2 + y');
+      expect(program.evaluate({ x: 3, y: 4 })).toBe(10n);
+      expect(program.evaluate({ x: 5, y: 1 })).toBe(11n);
+      expect(program.evaluate({ x: 0, y: 7 })).toBe(7n);
+      expect(
+        program.evaluate(
+          new Map([
+            ['x', 1n],
+            ['y', 1n],
+          ])
+        )
+      ).toBe(3n);
+    });
+  });
+
+  describe('Static Calls With Custom Functions', () => {
+    it('should compile with a custom function', () => {
+      const custom = new CustomFunctions({
+        double: (args) => {
+          const value = args[0];
+          if (typeof value === 'bigint') {
+            return value * 2n;
+          }
+          if (typeof value === 'number') {
+            return value * 2;
+          }
+          throw new EvaluationError('double() expects numeric argument');
+        },
+      });
+      const program = CEL.compile('double(x) + y', custom);
+      expect(program.evaluate({ x: 10, y: 5 })).toBe(25n);
+      expect(program.evaluate({ x: 2, y: 5 })).toBe(9n);
+    });
+
+    it('should eval with a custom function', () => {
+      const custom = new CustomFunctions({ double: (args) => (args[0] as bigint) * 2n });
+      expect(CEL.eval('double(x)', custom, { x: 7 })).toBe(14n);
+    });
+
+    it('should throw for invalid expressions', () => {
+      const custom = new StandardFunctions();
+      expect(() => CEL.compile('x +', custom)).toThrow(ParseError);
+      expect(() => CEL.eval('(1 +', custom, {})).toThrow(ParseError);
+    });
+
+    it('should prefer custom functions over built-ins', () => {
+      // Override built-in size() to return a sentinel value
+      const custom = new CustomFunctions({ size: () => 999n, echo: (args) => args[0] });
+      expect(CEL.eval('size([1, 2, 3])', custom, {})).toBe(999n);
+      const program = CEL.compile('echo(a)', custom);
+      expect(program.evaluate({ a: 'hello' })).toBe('hello');
+    });
+
+    it('should normalise custom function results', () => {
+      const custom = new CustomFunctions({
+        record: () => ({ count: 2, when: new Date('2024-01-01T00:00:00Z') }),
+      });
+      expect(CEL.eval('record().count', custom, {})).toBe(2);
+      expect(CEL.eval('record().when.getFullYear()', custom, {})).toBe(2024n);
+    });
+  });
+
+  describe('Macro Errors', () => {
+    it('should reject malformed macro calls', () => {
+      const cel = new CEL();
+      expect(() => cel.eval('[1, 2, 3].map()', {})).toThrow(EvaluationError);
+      expect(() => cel.eval('[1, 2, 3].map(123, x * 2)', {})).toThrow(EvaluationError);
+    });
+  });
 });
+
+/** Custom functions implementation for testing. */
+class CustomFunctions extends StandardFunctions {
+  constructor(private readonly local: Record<string, (args: unknown[]) => unknown>) {
+    super();
+  }
+
+  override callFunction(name: string, args: unknown[]): unknown {
+    const custom = this.local[name];
+    if (custom) {
+      return custom(args);
+    }
+    return super.callFunction(name, args);
+  }
+}

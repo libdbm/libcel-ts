@@ -46,14 +46,14 @@ describe('Parser', () => {
       const parser1 = new Parser('42');
       const expr1 = parser1.parse();
       expect(expr1).toBeInstanceOf(Literal);
-      expect((expr1 as Literal).value).toBe(42);
+      expect((expr1 as Literal).value).toBe(42n);
       expect((expr1 as Literal).literalType).toBe(LiteralType.INT);
 
       // Hexadecimal
       const parser2 = new Parser('0xFF');
       const expr2 = parser2.parse();
       expect(expr2).toBeInstanceOf(Literal);
-      expect((expr2 as Literal).value).toBe(255);
+      expect((expr2 as Literal).value).toBe(255n);
       expect((expr2 as Literal).literalType).toBe(LiteralType.INT);
 
       // Negative hex
@@ -63,20 +63,20 @@ describe('Parser', () => {
       const unary = expr3 as Unary;
       expect(unary.op).toBe(UnaryOp.NEGATE);
       expect(unary.operand).toBeInstanceOf(Literal);
-      expect((unary.operand as Literal).value).toBe(16);
+      expect((unary.operand as Literal).value).toBe(16n);
     });
 
     it('should parse unsigned integer literals', () => {
       const parser1 = new Parser('42u');
       const expr1 = parser1.parse();
       expect(expr1).toBeInstanceOf(Literal);
-      expect((expr1 as Literal).value).toBe(42);
+      expect((expr1 as Literal).value).toBe(42n);
       expect((expr1 as Literal).literalType).toBe(LiteralType.UINT);
 
       const parser2 = new Parser('0xFFu');
       const expr2 = parser2.parse();
       expect(expr2).toBeInstanceOf(Literal);
-      expect((expr2 as Literal).value).toBe(255);
+      expect((expr2 as Literal).value).toBe(255n);
       expect((expr2 as Literal).literalType).toBe(LiteralType.UINT);
     });
 
@@ -166,12 +166,12 @@ describe('Parser', () => {
       const parser1 = new Parser('b"bytes"');
       const expr1 = parser1.parse();
       expect(expr1).toBeInstanceOf(Literal);
-      expect((expr1 as Literal).value).toBe('bytes');
+      expect((expr1 as Literal).value).toEqual(new TextEncoder().encode('bytes'));
       expect((expr1 as Literal).literalType).toBe(LiteralType.BYTES);
 
       const parser2 = new Parser("B'test'");
       const expr2 = parser2.parse();
-      expect((expr2 as Literal).value).toBe('test');
+      expect((expr2 as Literal).value).toEqual(new TextEncoder().encode('test'));
       expect((expr2 as Literal).literalType).toBe(LiteralType.BYTES);
     });
   });
@@ -192,8 +192,8 @@ describe('Parser', () => {
       expect(expr1).toBeInstanceOf(Binary);
       const bin1 = expr1 as Binary;
       expect(bin1.op).toBe(BinaryOp.ADD);
-      expect((bin1.left as Literal).value).toBe(1);
-      expect((bin1.right as Literal).value).toBe(2);
+      expect((bin1.left as Literal).value).toBe(1n);
+      expect((bin1.right as Literal).value).toBe(2n);
 
       const parser2 = new Parser('x * y');
       const expr2 = parser2.parse();
@@ -292,9 +292,9 @@ describe('Parser', () => {
       expect(expr2).toBeInstanceOf(ListExpression);
       const elements = (expr2 as ListExpression).elements;
       expect(elements).toHaveLength(3);
-      expect((elements[0] as Literal).value).toBe(1);
-      expect((elements[1] as Literal).value).toBe(2);
-      expect((elements[2] as Literal).value).toBe(3);
+      expect((elements[0] as Literal).value).toBe(1n);
+      expect((elements[1] as Literal).value).toBe(2n);
+      expect((elements[2] as Literal).value).toBe(3n);
 
       const parser3 = new Parser('[1, 2, 3,]');
       const expr3 = parser3.parse();
@@ -315,7 +315,7 @@ describe('Parser', () => {
       expect(expr2).toBeInstanceOf(MapExpression);
       const entries = (expr2 as MapExpression).entries;
       expect(entries).toHaveLength(2);
-      expect((entries[0]!.key as Literal).value).toBe(1);
+      expect((entries[0]!.key as Literal).value).toBe(1n);
       expect((entries[0]!.value as Literal).value).toBe('one');
     });
   });
@@ -400,7 +400,7 @@ describe('Parser', () => {
       const idx = expr as Index;
       expect(idx.operand).toBeInstanceOf(Identifier);
       expect((idx.operand as Identifier).name).toBe('list');
-      expect((idx.index as Literal).value).toBe(0);
+      expect((idx.index as Literal).value).toBe(0n);
     });
   });
 
@@ -523,6 +523,48 @@ describe('Parser', () => {
         expect(err.line).toBe(3);
         expect(err.column).toBe(1);
       }
+    });
+  });
+  describe('Presence Test Macro', () => {
+    it('should rewrite has(a.b) into a presence test', () => {
+      const expr = new Parser('has(a.b)').parse();
+      expect(expr).toBeInstanceOf(Select);
+      const select = expr as Select;
+      expect(select.isTest).toBe(true);
+      expect(select.field).toBe('b');
+      expect((select.operand as Identifier).name).toBe('a');
+    });
+
+    it('should keep the two-argument has() function', () => {
+      const expr = new Parser('has(m, "k")').parse();
+      expect(expr).toBeInstanceOf(Call);
+      expect((expr as Call).functionName).toBe('has');
+      expect((expr as Call).args.length).toBe(2);
+    });
+
+    it('should reject has() without a field selection', () => {
+      expect(() => new Parser('has(1)').parse()).toThrow(ParseError);
+      expect(() => new Parser('has(a)').parse()).toThrow(
+        'has() requires a field selection, for example has(a.b)'
+      );
+    });
+  });
+
+  describe('Nesting Depth', () => {
+    it('should reject expressions nested too deeply', () => {
+      const shallow = '('.repeat(200) + '1' + ')'.repeat(200);
+      expect(() => new Parser(shallow).parse()).not.toThrow();
+      const deep = '('.repeat(300) + '1' + ')'.repeat(300);
+      expect(() => new Parser(deep).parse()).toThrow('Expression nesting too deep');
+    });
+  });
+
+  describe('Macro Recognition', () => {
+    it('should recognise sortBy as a macro', () => {
+      const expr = new Parser('items.sortBy(x, x.age)').parse();
+      expect(expr).toBeInstanceOf(Call);
+      expect((expr as Call).isMacro).toBe(true);
+      expect((expr as Call).functionName).toBe('sortBy');
     });
   });
 });

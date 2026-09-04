@@ -1,6 +1,6 @@
 {
   "name": "@libdbm/libcel-ts",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "description": "TypeScript implementation of Google's Common Expression Language (CEL)",
   "repository": {
     "type": "git",
@@ -30,7 +30,7 @@
     "test:coverage": "vitest --coverage",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "keywords": [
     "cel",

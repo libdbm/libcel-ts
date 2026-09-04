@@ -49,11 +49,16 @@ export { Parser, ParseError } from './parser/index.js';
 // Interpreter
 export { Interpreter } from './interpreter/index.js';
 
+// Printer
+export { Printer, PrinterOptions } from './printer/index.js';
+
 // Functions
 export type { Functions } from './functions/index.js';
-export { StandardFunctions, EvaluationError } from './functions/index.js';
+export { StandardFunctions, EvaluationError, ArgumentError } from './functions/index.js';
 
-// Utilities (optional, for advanced users)
-import * as Utilities from './functions/utilities.js';
-export { Utilities };
+// Value model
+export * from './values/index.js';
+
+// Utilities and extension libraries (optional, for advanced users)
+export { Utilities, Strings, Regexes, Lists, Sets, Maths, Codecs } from './functions/index.js';
 export { asBool } from './functions/utilities.js';

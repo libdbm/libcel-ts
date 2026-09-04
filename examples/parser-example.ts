@@ -1,4 +1,4 @@
-import { Parser, ParseError } from '../src/index.js';
+import { Parser, ParseError, Printer, PrinterOptions } from '../src/index.js';
 
 /** Example demonstrating the CEL parser usage. */
 
@@ -8,6 +8,7 @@ function demo(expression: string): void {
     const parser = new Parser(expression);
     const ast = parser.parse();
     console.log(`Parsed successfully: ${ast.constructor.name}`);
+    console.log(`Printed: ${Printer.print(ast)}`);
     console.log();
   } catch (e) {
     if (e instanceof ParseError) {
@@ -48,3 +49,14 @@ demo("'admin' in user.roles");
 
 // Example 10: Complex nested expression
 demo("users.all(u, u.age >= 18) ? 'All adults' : 'Contains minors'");
+
+// Example 11: Presence test macro
+demo('has(user.email) && user.email != ""');
+
+// Example 12: Pretty printing
+console.log(
+  Printer.print(
+    new Parser("{'alpha': [1, 2, 3], 'beta': {'gamma': 'a long enough string value'}}").parse(),
+    new PrinterOptions(true, 2, 40)
+  )
+);
